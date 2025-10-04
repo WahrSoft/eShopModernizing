@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+﻿@using Microsoft.AspNetCore.Http
+<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8" />
@@ -35,7 +36,7 @@
                 <section class="col-sm-6">
                     <img class="esh-app-footer-text hidden-xs" src="~/images/main_footer_text.png" width="335" height="26" alt="footer text image" />
                     <br />
-                    @{ var sessionInfo = new HtmlString($"{HttpContext.Current.Session["MachineName"]}, {HttpContext.Current.Session["SessionStartTime"]}");}
+                    @{ var sessionInfo = $"{Context.Session.GetString("MachineName")}, {Context.Session.GetString("SessionStartTime")}";}
                     <small>@sessionInfo</small>
                 </section>
                 

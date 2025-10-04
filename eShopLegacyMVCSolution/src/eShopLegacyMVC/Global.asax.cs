@@ -3,7 +3,6 @@ using System;
 using System.Diagnostics;
 using System.Reflection;
 using System.Web;
-using System.Web.Http;
 
 namespace eShopLegacyMVC
 {
@@ -13,7 +12,8 @@ namespace eShopLegacyMVC
 
         protected void Application_Start()
         {
-            GlobalConfiguration.Configure(WebApiConfig.Register);
+            // This method is kept for compatibility with System Web Adapters
+            // Most functionality has been moved to Program.cs
         }
 
         /// <summary>

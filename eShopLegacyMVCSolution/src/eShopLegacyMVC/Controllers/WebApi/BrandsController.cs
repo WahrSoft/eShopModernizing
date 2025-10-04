@@ -2,14 +2,13 @@
 using eShopLegacyMVC.Services;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Runtime.Remoting.Messaging;
-using System.Web.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace eShopLegacyMVC.Controllers.WebApi
 {
-    public class BrandsController : ApiController
+    [ApiController]
+    [Route("api/[controller]")]
+    public class BrandsController : ControllerBase
     {
         private ICatalogService _service;
 
@@ -18,15 +17,17 @@ namespace eShopLegacyMVC.Controllers.WebApi
             _service = service;
         }
 
-        // GET api/<controller>
+        // GET api/brands
+        [HttpGet]
         public IEnumerable<Models.CatalogBrand> Get()
         {
             var brands = _service.GetCatalogBrands();
             return brands;
         }
 
-        // GET api/<controller>/5
-        public IHttpActionResult Get(int id)
+        // GET api/brands/5
+        [HttpGet("{id}")]
+        public ActionResult<Models.CatalogBrand> Get(int id)
         {
             var brands = _service.GetCatalogBrands();
             var brand = brands.FirstOrDefault(x => x.Id == id);
@@ -35,18 +36,18 @@ namespace eShopLegacyMVC.Controllers.WebApi
             return Ok(brand);
         }
 
-        [HttpDelete]
-        // DELETE api/<controller>/5
-        public IHttpActionResult Delete(int id)
+        // DELETE api/brands/5
+        [HttpDelete("{id}")]
+        public IActionResult Delete(int id)
         {
             var brandToDelete = _service.GetCatalogBrands().FirstOrDefault(x => x.Id == id);
             if (brandToDelete == null)
             {
-                return ResponseMessage(new HttpResponseMessage(HttpStatusCode.NotFound));
+                return NotFound();
             }
 
             // demo only - don't actually delete
-            return ResponseMessage(new HttpResponseMessage(HttpStatusCode.OK));
+            return Ok();
         }
     }
 }

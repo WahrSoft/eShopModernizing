@@ -1,8 +1,8 @@
 ﻿using eShopLegacyMVC.Services;
 using log4net;
 using System.IO;
-using System.Net;
-using System.Web.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Hosting;
 
 namespace eShopLegacyMVC.Controllers
 {
@@ -13,10 +13,12 @@ namespace eShopLegacyMVC.Controllers
         public const string GetPicRouteName = "GetPicRouteTemplate";
 
         private ICatalogService service;
+        private readonly IWebHostEnvironment _environment;
 
-        public PicController(ICatalogService service)
+        public PicController(ICatalogService service, IWebHostEnvironment environment)
         {
             this.service = service;
+            _environment = environment;
         }
 
         // GET: Pic/5.png
@@ -28,25 +30,28 @@ namespace eShopLegacyMVC.Controllers
 
             if (catalogItemId <= 0)
             {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
+                return BadRequest();
             }
 
             var item = service.FindCatalogItem(catalogItemId);
 
             if (item != null)
             {
-                var webRoot = Server.MapPath("~/Pics");
+                var webRoot = Path.Combine(_environment.WebRootPath, "Pics");
                 var path = Path.Combine(webRoot, item.PictureFileName);
 
-                string imageFileExtension = Path.GetExtension(item.PictureFileName);
-                string mimetype = GetImageMimeTypeFromImageFileExtension(imageFileExtension);
+                if (System.IO.File.Exists(path))
+                {
+                    string imageFileExtension = Path.GetExtension(item.PictureFileName);
+                    string mimetype = GetImageMimeTypeFromImageFileExtension(imageFileExtension);
 
-                var buffer = System.IO.File.ReadAllBytes(path);
+                    var buffer = System.IO.File.ReadAllBytes(path);
 
-                return File(buffer, mimetype);
+                    return File(buffer, mimetype);
+                }
             }
 
-            return HttpNotFound();
+            return NotFound();
         }
 
         private string GetImageMimeTypeFromImageFileExtension(string extension)

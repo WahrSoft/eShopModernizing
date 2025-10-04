@@ -6,19 +6,29 @@ using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.Services;
 using System.Data.Entity;
+using log4net;
+using System.Reflection;
+using System.Diagnostics;
+using Microsoft.AspNetCore.Http;
+using System;
+using System.IO;
+using System.Linq;
+using eShopLegacyMVC;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddSystemWebAdapters()
-    .AddWrappedAspNetCoreSession()
-    .AddJsonSessionSerializer(options =>
-    {
-        options.RegisterKey<string>("MachineName");
-        options.RegisterKey<string>("SessionStartTime");
-    })
-    .AddHttpApplication<MvcApplication>();
+
+// Configure log4net
+var logRepository = LogManager.GetRepository(Assembly.GetEntryAssembly());
+log4net.Config.XmlConfigurator.Configure(logRepository, new FileInfo("log4net.config"));
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+
+// Add Web API controllers
+builder.Services.AddControllers();
+
+// Add session support
+builder.Services.AddSession();
 
 // Register application services
 RegisterApplicationServices(builder.Services, builder.Configuration);
@@ -36,8 +46,31 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
 app.UseSession();
-app.UseSystemWebAdapters();
+
+// Custom middleware to track session information (converted from Session_Start)
+app.Use(async (context, next) =>
+{
+    if (!context.Session.Keys.Contains("MachineName"))
+    {
+        context.Session.SetString("MachineName", Environment.MachineName);
+        context.Session.SetString("SessionStartTime", DateTime.Now.ToString());
+    }
+    await next();
+});
+
+// Custom middleware for logging (converted from Application_BeginRequest)
+app.Use(async (context, next) =>
+{
+    LogicalThreadContext.Properties["activityid"] = new ActivityIdHelper();
+    LogicalThreadContext.Properties["requestinfo"] = new WebRequestInfo(context);
+
+    var log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+    log.Debug("WebApplication_BeginRequest");
+
+    await next();
+});
 
 // Initialize database
 using (var scope = app.Services.CreateScope())
@@ -50,15 +83,18 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Map attribute-routed controllers first
-app.MapControllers()
-    .RequireSystemWebAdapterSession();
+// Map Web API routes (converted from WebApiConfig)
+app.MapControllers();
 
 // Map conventional MVC routes
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Catalog}/{action=Index}/{id?}")
-    .RequireSystemWebAdapterSession();
+    pattern: "{controller=Catalog}/{action=Index}/{id?}");
+
+// Map API routes
+app.MapControllerRoute(
+    name: "api",
+    pattern: "api/{controller}/{id?}");
 
 app.Run();
 
@@ -83,4 +119,32 @@ static void RegisterApplicationServices(IServiceCollection services, IConfigurat
     // Register initializer and its dependencies
     services.AddSingleton<CatalogItemHiLoGenerator>();
     services.AddScoped<CatalogDBInitializer>();
+}
+
+public class ActivityIdHelper
+{
+    public override string ToString()
+    {
+        if (Trace.CorrelationManager.ActivityId == Guid.Empty)
+        {
+            Trace.CorrelationManager.ActivityId = Guid.NewGuid();
+        }
+
+        return Trace.CorrelationManager.ActivityId.ToString();
+    }
+}
+
+public class WebRequestInfo
+{
+    private readonly HttpContext _context;
+
+    public WebRequestInfo(HttpContext context)
+    {
+        _context = context;
+    }
+
+    public override string ToString()
+    {
+        return $"{_context?.Request?.Path}, {_context?.Request?.Headers["User-Agent"]}";
+    }
 }
