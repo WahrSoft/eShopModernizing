@@ -7,7 +7,6 @@ using eShopLegacyMVC.Modules;
 using log4net;
 using System;
 using System.Configuration;
-using System.Data.Entity;
 using System.Diagnostics;
 using System.Reflection;
 using System.Web;
@@ -26,7 +25,6 @@ namespace eShopLegacyMVC
             container = RegisterContainer();
             GlobalConfiguration.Configure(WebApiConfig.Register);
             AreaRegistration.RegisterAllAreas();
-            ConfigDataBase();
         }
 
         /// <summary>
@@ -72,16 +70,6 @@ namespace eShopLegacyMVC
             GlobalConfiguration.Configuration.DependencyResolver = resolver;
 
             return container;
-        }
-
-        private void ConfigDataBase()
-        {
-            var mockData = bool.Parse(ConfigurationManager.AppSettings["UseMockData"]);
-
-            if (!mockData)
-            {
-                Database.SetInitializer<CatalogDBContext>(container.Resolve<CatalogDBInitializer>());
-            }
         }
 
     }
