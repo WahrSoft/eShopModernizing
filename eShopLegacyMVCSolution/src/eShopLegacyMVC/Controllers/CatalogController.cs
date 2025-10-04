@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
-using System.Net;
-using System.Web.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Services;
 using log4net;
@@ -33,12 +33,12 @@ namespace eShopLegacyMVC.Controllers
             _log.Info($"Now loading... /Catalog/Details?id={id}");
             if (id == null)
             {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
+                return BadRequest();
             }
             CatalogItem catalogItem = service.FindCatalogItem(id.Value);
             if (catalogItem == null)
             {
-                return HttpNotFound();
+                return NotFound();
             }
             AddUriPlaceHolder(catalogItem);
 
@@ -79,12 +79,12 @@ namespace eShopLegacyMVC.Controllers
             _log.Info($"Now loading... /Catalog/Edit?id={id}");
             if (id == null)
             {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
+                return BadRequest();
             }
             CatalogItem catalogItem = service.FindCatalogItem(id.Value);
             if (catalogItem == null)
             {
-                return HttpNotFound();
+                return NotFound();
             }
             AddUriPlaceHolder(catalogItem);
             ViewBag.CatalogBrandId = new SelectList(service.GetCatalogBrands(), "Id", "Brand", catalogItem.CatalogBrandId);
@@ -116,12 +116,12 @@ namespace eShopLegacyMVC.Controllers
             _log.Info($"Now loading... /Catalog/Delete?id={id}");
             if (id == null)
             {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
+                return BadRequest();
             }
             CatalogItem catalogItem = service.FindCatalogItem(id.Value);
             if (catalogItem == null)
             {
-                return HttpNotFound();
+                return NotFound();
             }
             AddUriPlaceHolder(catalogItem);
 
@@ -137,6 +137,17 @@ namespace eShopLegacyMVC.Controllers
             CatalogItem catalogItem = service.FindCatalogItem(id);
             service.RemoveCatalogItem(catalogItem);
             return RedirectToAction("Index");
+        }
+
+        // Error handling actions
+        public IActionResult Error()
+        {
+            return View();
+        }
+
+        public IActionResult StatusErrorCode(int code)
+        {
+            return View("StatusErrorCode", code);
         }
 
         protected override void Dispose(bool disposing)
@@ -159,7 +170,7 @@ namespace eShopLegacyMVC.Controllers
 
         private void AddUriPlaceHolder(CatalogItem item)
         {
-            item.PictureUri = this.Url.RouteUrl(PicController.GetPicRouteName, new { catalogItemId = item.Id }, this.Request.Url.Scheme);            
+            item.PictureUri = this.Url.RouteUrl(PicController.GetPicRouteName, new { catalogItemId = item.Id }, this.Request.Scheme);            
         }
     }
 }

@@ -12,7 +12,6 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Web;
 using System.Web.Http;
-using System.Web.Mvc;
 
 namespace eShopLegacyMVC
 {
@@ -27,7 +26,6 @@ namespace eShopLegacyMVC
             container = RegisterContainer();
             GlobalConfiguration.Configure(WebApiConfig.Register);
             AreaRegistration.RegisterAllAreas();
-            FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);
             ConfigDataBase();
         }
 
