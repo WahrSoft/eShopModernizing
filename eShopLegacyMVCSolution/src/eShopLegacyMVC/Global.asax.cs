@@ -1,12 +1,5 @@
-﻿using Autofac;
-using Autofac.Integration.Mvc;
-using Autofac.Integration.WebApi;
-using eShopLegacyMVC.Models;
-using eShopLegacyMVC.Models.Infrastructure;
-using eShopLegacyMVC.Modules;
-using log4net;
+﻿using log4net;
 using System;
-using System.Configuration;
 using System.Diagnostics;
 using System.Reflection;
 using System.Web;
@@ -18,13 +11,9 @@ namespace eShopLegacyMVC
     {
         private static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        IContainer container;
-
         protected void Application_Start()
         {
-            container = RegisterContainer();
             GlobalConfiguration.Configure(WebApiConfig.Register);
-            AreaRegistration.RegisterAllAreas();
         }
 
         /// <summary>
@@ -45,33 +34,6 @@ namespace eShopLegacyMVC
 
             _log.Debug("WebApplication_BeginRequest");
         }
-
-        /// <summary>
-        /// http://docs.autofac.org/en/latest/integration/mvc.html
-        /// </summary>
-        protected IContainer RegisterContainer()
-        {
-            var builder = new ContainerBuilder();
-
-            var thisAssembly = Assembly.GetExecutingAssembly();
-            builder.RegisterControllers(thisAssembly);
-            builder.RegisterApiControllers(thisAssembly);
-
-            var mockData = bool.Parse(ConfigurationManager.AppSettings["UseMockData"]);
-            builder.RegisterModule(new ApplicationModule(mockData));
-
-            var container = builder.Build();
-
-            // set mvc resolver
-            DependencyResolver.SetResolver(new AutofacDependencyResolver(container));
-
-            // set webapi resolver
-            var resolver = new AutofacWebApiDependencyResolver(container);
-            GlobalConfiguration.Configuration.DependencyResolver = resolver;
-
-            return container;
-        }
-
     }
 
     public class ActivityIdHelper

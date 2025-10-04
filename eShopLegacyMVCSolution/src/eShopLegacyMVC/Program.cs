@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
+using eShopLegacyMVC.Services;
 using System.Data.Entity;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,13 +20,8 @@ builder.Services.AddSystemWebAdapters()
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 
-// Register EntityFramework DbContext
-builder.Services.AddScoped<CatalogDBContext>(provider =>
-    new CatalogDBContext($"name={builder.Configuration.GetConnectionString("CatalogDBContext")}"));
-
-// Register initializer and its dependencies
-builder.Services.AddScoped<CatalogItemHiLoGenerator>();
-builder.Services.AddScoped<CatalogDBInitializer>();
+// Register application services
+RegisterApplicationServices(builder.Services, builder.Configuration);
 
 var app = builder.Build();
 
@@ -65,3 +61,26 @@ app.MapControllerRoute(
     .RequireSystemWebAdapterSession();
 
 app.Run();
+
+static void RegisterApplicationServices(IServiceCollection services, IConfiguration configuration)
+{
+    var useMockData = configuration.GetValue<bool>("AppSettings:UseMockData");
+
+    // Register catalog service based on configuration
+    if (useMockData)
+    {
+        services.AddSingleton<ICatalogService, CatalogServiceMock>();
+    }
+    else
+    {
+        services.AddScoped<ICatalogService, CatalogService>();
+    }
+
+    // Register EntityFramework DbContext
+    services.AddScoped<CatalogDBContext>(provider =>
+        new CatalogDBContext($"name={configuration.GetConnectionString("CatalogDBContext")}"));
+
+    // Register initializer and its dependencies
+    services.AddSingleton<CatalogItemHiLoGenerator>();
+    services.AddScoped<CatalogDBInitializer>();
+}
