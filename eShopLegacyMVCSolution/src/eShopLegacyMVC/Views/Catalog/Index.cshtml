@@ -9,7 +9,7 @@
         @Html.ActionLink("Create New", "Create", null, new { @class = "btn esh-button esh-button-primary" })
     </p>
 
-    <partial name="CatalogTable" model="Model.Data" />
+    @Html.Partial("CatalogTable", Model.Data)
 
     <div class="esh-pager">
         <div class="container">
