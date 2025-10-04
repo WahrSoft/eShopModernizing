@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: eshop-modernized
+metadata:
+  template: eshop-modernized@0.0.1-beta
+
+variables:
+  AZURE_ENV_NAME:
+    type: string
+    description: Name of the environment
+
+services:
+  api:
+    project: ./src/eShopModernized
+    language: dotnet
+    host: appservice
+    dist: ./src/eShopModernized/bin/Release/net8.0/publish
+
+hooks:
+  postprovision:
+    shell: sh
+    run: |
+      echo "Running post-provision hooks..."
+      # Add any post-provision scripts here
+      
+  predeploy:
+    shell: sh
+    run: |
+      echo "Running pre-deploy hooks..."
+      # Build and publish the application
+      dotnet publish ./src/eShopModernized/eShopModernized.csproj -c Release -o ./src/eShopModernized/bin/Release/net8.0/publish
+      
+  postdeploy:
+    shell: sh
+    run: |
+      echo "Running post-deploy hooks..."
+      # Run database migrations or other post-deploy tasks
+      echo "Deployment completed successfully!"
