@@ -117,13 +117,13 @@ using (var scope = app.Services.CreateScope())
         if (!mockData)
         {
             var initializer = services.GetRequiredService<CatalogDBInitializer>();
-            initializer.Seed(context);
+            await initializer.SeedAsync(context);
             logger.LogInformation("Database initialization completed.");
         }
         else
         {
             // Just ensure the database exists for mock data scenario
-            context.Database.EnsureCreated();
+            await context.Database.EnsureCreatedAsync();
             logger.LogInformation("Database ensured for mock data scenario.");
         }
     }
@@ -167,9 +167,11 @@ static void RegisterApplicationServices(IServiceCollection services, IConfigurat
         services.AddScoped<ICatalogService, CatalogService>();
     }
 
-    // Register EF Core related services
-    services.AddScoped<CatalogItemHiLoGenerator>();
+    // Register database initializer
     services.AddScoped<CatalogDBInitializer>();
+    
+    // Keep HiLoGenerator for backward compatibility with existing code that might use it
+    services.AddScoped<CatalogItemHiLoGenerator>();
 }
 
 public class ActivityIdHelper

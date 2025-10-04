@@ -1,5 +1,6 @@
 ﻿using eShopLegacyMVC.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System;
 using System.Linq;
 
@@ -18,10 +19,22 @@ namespace eShopLegacyMVC.Models
             {
                 if (remainingLoIds == 0)
                 {
-                    // EF Core way to execute raw SQL
-                    var rawQuery = db.Database.SqlQueryRaw<long>("SELECT NEXT VALUE FOR catalog_hilo;");
-                    sequenceId = (int)rawQuery.Single();
-                    remainingLoIds = HiLoIncrement - 1;
+
+                    using var command = db.Database.GetDbConnection().CreateCommand();
+                    command.CommandText = $"SELECT NEXT VALUE FOR catalog_hilo";
+
+                    db.Database.OpenConnection();
+                    try
+                    {
+                        var result = command.ExecuteScalar();
+                        sequenceId = Convert.ToInt32(result);
+                        remainingLoIds = HiLoIncrement - 1;
+                    }
+                    finally
+                    {
+                        db.Database.CloseConnection();
+                    }
+
                     return sequenceId;
                 }
                 else

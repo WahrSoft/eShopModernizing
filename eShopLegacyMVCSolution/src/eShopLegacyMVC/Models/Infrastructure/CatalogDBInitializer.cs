@@ -9,54 +9,45 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
 
 namespace eShopLegacyMVC.Models.Infrastructure
 {
     public class CatalogDBInitializer
     {
-        private const string DBCatalogSequenceName = "catalog_type_hilo";
-        private const string DBBrandSequenceName = "catalog_brand_hilo";
-        private const string CatalogItemHiLoSequenceScript = @"Models\Infrastructure\dbo.catalog_hilo.Sequence.sql";
-        private const string CatalogBrandHiLoSequenceScript = @"Models\Infrastructure\dbo.catalog_brand_hilo.Sequence.sql";
-        private const string CatalogTypeHiLoSequenceScript = @"Models\Infrastructure\dbo.catalog_type_hilo.Sequence.sql";
-
-        private readonly CatalogItemHiLoGenerator _indexGenerator;
         private readonly bool _useCustomizationData;
         private readonly IConfiguration _configuration;
         private readonly IWebHostEnvironment _environment;
         private readonly ILogger<CatalogDBInitializer> _logger;
 
         public CatalogDBInitializer(
-            CatalogItemHiLoGenerator indexGenerator, 
             IConfiguration configuration, 
             IWebHostEnvironment environment,
             ILogger<CatalogDBInitializer> logger)
         {
-            _indexGenerator = indexGenerator;
             _configuration = configuration;
             _environment = environment;
             _logger = logger;
             _useCustomizationData = _configuration.GetValue<bool>("AppSettings:UseCustomizationData");
         }
 
-        public void Seed(CatalogDBContext context)
+        public async Task SeedAsync(CatalogDBContext context)
         {
             try
             {
                 _logger.LogInformation("Starting database seeding...");
 
-                // Ensure the database is created
-                context.Database.EnsureCreated();
+                // Ensure the database is created and migrations are applied
+                await context.Database.EnsureCreatedAsync();
 
-                // Execute sequence scripts
-                ExecuteScript(context, CatalogItemHiLoSequenceScript);
-                ExecuteScript(context, CatalogBrandHiLoSequenceScript);
-                ExecuteScript(context, CatalogTypeHiLoSequenceScript);
+                // Only add custom data if UseCustomizationData is true and data doesn't exist
+                if (_useCustomizationData)
+                {
+                    await SeedCustomDataAsync(context);
+                }
 
-                AddCatalogTypes(context);
-                AddCatalogBrands(context);
-                AddCatalogItems(context);
-                AddCatalogItemPictures();
+                // Handle catalog item pictures
+                await AddCatalogItemPicturesAsync();
 
                 _logger.LogInformation("Database seeding completed successfully.");
             }
@@ -67,75 +58,46 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
         }
 
-        private void AddCatalogTypes(CatalogDBContext context)
+        private async Task SeedCustomDataAsync(CatalogDBContext context)
         {
-            if (context.CatalogTypes.Any())
+            // Clear existing data if we're using custom data
+            if (await context.CatalogItems.AnyAsync())
             {
-                _logger.LogInformation("CatalogTypes already exist. Skipping seeding.");
-                return;
+                _logger.LogInformation("Custom data seeding: Clearing existing catalog data...");
+                
+                context.CatalogItems.RemoveRange(context.CatalogItems);
+                context.CatalogBrands.RemoveRange(context.CatalogBrands);
+                context.CatalogTypes.RemoveRange(context.CatalogTypes);
+                
+                await context.SaveChangesAsync();
             }
 
-            var preconfiguredTypes = _useCustomizationData
-                ? GetCatalogTypesFromFile()
-                : PreconfiguredData.GetPreconfiguredCatalogTypes();
-
-            int sequenceId = GetSequenceIdFromSelectedDBSequence(context, DBCatalogSequenceName);
-            foreach (var type in preconfiguredTypes)
+            // Add custom catalog types
+            var customTypes = GetCatalogTypesFromFile();
+            if (customTypes.Any())
             {
-                type.Id = sequenceId;
-                context.CatalogTypes.Add(type);
-                sequenceId++;
+                await context.CatalogTypes.AddRangeAsync(customTypes);
+                await context.SaveChangesAsync();
+                _logger.LogInformation("Added {Count} custom catalog types.", customTypes.Count());
             }
 
-            context.SaveChanges();
-            _logger.LogInformation("Added {Count} catalog types.", preconfiguredTypes.Count());
-        }
-
-        private void AddCatalogBrands(CatalogDBContext context)
-        {
-            if (context.CatalogBrands.Any())
+            // Add custom catalog brands
+            var customBrands = GetCatalogBrandsFromFile();
+            if (customBrands.Any())
             {
-                _logger.LogInformation("CatalogBrands already exist. Skipping seeding.");
-                return;
+                await context.CatalogBrands.AddRangeAsync(customBrands);
+                await context.SaveChangesAsync();
+                _logger.LogInformation("Added {Count} custom catalog brands.", customBrands.Count());
             }
 
-            var preconfiguredBrands = _useCustomizationData
-                ? GetCatalogBrandsFromFile()
-                : PreconfiguredData.GetPreconfiguredCatalogBrands();
-
-            int sequenceId = GetSequenceIdFromSelectedDBSequence(context, DBBrandSequenceName);
-            foreach (var brand in preconfiguredBrands)
+            // Add custom catalog items
+            var customItems = GetCatalogItemsFromFile(context);
+            if (customItems.Any())
             {
-                brand.Id = sequenceId;
-                context.CatalogBrands.Add(brand);
-                sequenceId++;
+                await context.CatalogItems.AddRangeAsync(customItems);
+                await context.SaveChangesAsync();
+                _logger.LogInformation("Added {Count} custom catalog items.", customItems.Count());
             }
-
-            context.SaveChanges();
-            _logger.LogInformation("Added {Count} catalog brands.", preconfiguredBrands.Count());
-        }
-
-        private void AddCatalogItems(CatalogDBContext context)
-        {
-            if (context.CatalogItems.Any())
-            {
-                _logger.LogInformation("CatalogItems already exist. Skipping seeding.");
-                return;
-            }
-
-            var preconfiguredItems = _useCustomizationData
-                ? GetCatalogItemsFromFile(context)
-                : PreconfiguredData.GetPreconfiguredCatalogItems();
-
-            foreach (var item in preconfiguredItems)
-            {
-                var sequenceId = _indexGenerator.GetNextSequenceValue(context);
-                item.Id = sequenceId;
-                context.CatalogItems.Add(item);
-            }
-
-            context.SaveChanges();
-            _logger.LogInformation("Added {Count} catalog items.", preconfiguredItems.Count());
         }
 
         private IEnumerable<CatalogType> GetCatalogTypesFromFile()
@@ -145,27 +107,34 @@ namespace eShopLegacyMVC.Models.Infrastructure
 
             if (!File.Exists(csvFileCatalogTypes))
             {
-                return PreconfiguredData.GetPreconfiguredCatalogTypes();
+                _logger.LogWarning("CatalogTypes.csv file not found at {FilePath}", csvFileCatalogTypes);
+                return Enumerable.Empty<CatalogType>();
             }
 
-            string[] csvheaders;
+            try
+            {
+                string[] requiredHeaders = { "catalogtype" };
+                string[] csvheaders = GetHeaders(csvFileCatalogTypes, requiredHeaders);
 
-            string[] requiredHeaders = { "catalogtype" };
-            csvheaders = GetHeaders(csvFileCatalogTypes, requiredHeaders);
-
-            return File.ReadAllLines(csvFileCatalogTypes)
-                                        .Skip(1) // skip header row
-                                        .Select(x => CreateCatalogType(x))
-                                        .Where(x => x != null);
+                return File.ReadAllLines(csvFileCatalogTypes)
+                            .Skip(1) // skip header row
+                            .Select(x => CreateCatalogType(x))
+                            .Where(x => x != null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reading CatalogTypes from file: {FilePath}", csvFileCatalogTypes);
+                return Enumerable.Empty<CatalogType>();
+            }
         }
 
-        static CatalogType CreateCatalogType(string type)
+        private static CatalogType CreateCatalogType(string type)
         {
             type = type.Trim('"').Trim();
 
-            if (String.IsNullOrEmpty(type))
+            if (string.IsNullOrEmpty(type))
             {
-                throw new Exception("catalog Type Name is empty");
+                throw new ArgumentException("Catalog Type Name is empty");
             }
 
             return new CatalogType
@@ -181,27 +150,34 @@ namespace eShopLegacyMVC.Models.Infrastructure
 
             if (!File.Exists(csvFileCatalogBrands))
             {
-                return PreconfiguredData.GetPreconfiguredCatalogBrands();
+                _logger.LogWarning("CatalogBrands.csv file not found at {FilePath}", csvFileCatalogBrands);
+                return Enumerable.Empty<CatalogBrand>();
             }
 
-            string[] csvheaders;
+            try
+            {
+                string[] requiredHeaders = { "catalogbrand" };
+                string[] csvheaders = GetHeaders(csvFileCatalogBrands, requiredHeaders);
 
-            string[] requiredHeaders = { "catalogbrand" };
-            csvheaders = GetHeaders(csvFileCatalogBrands, requiredHeaders);
-
-            return File.ReadAllLines(csvFileCatalogBrands)
-                                        .Skip(1) // skip header row
-                                        .Select(x => CreateCatalogBrand(x))
-                                        .Where(x => x != null);
+                return File.ReadAllLines(csvFileCatalogBrands)
+                            .Skip(1) // skip header row
+                            .Select(x => CreateCatalogBrand(x))
+                            .Where(x => x != null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reading CatalogBrands from file: {FilePath}", csvFileCatalogBrands);
+                return Enumerable.Empty<CatalogBrand>();
+            }
         }
 
-        static CatalogBrand CreateCatalogBrand(string brand)
+        private static CatalogBrand CreateCatalogBrand(string brand)
         {
             brand = brand.Trim('"').Trim();
 
-            if (String.IsNullOrEmpty(brand))
+            if (string.IsNullOrEmpty(brand))
             {
-                throw new Exception("catalog Brand Name is empty");
+                throw new ArgumentException("Catalog Brand Name is empty");
             }
 
             return new CatalogBrand
@@ -217,47 +193,55 @@ namespace eShopLegacyMVC.Models.Infrastructure
 
             if (!File.Exists(csvFileCatalogItems))
             {
-                return PreconfiguredData.GetPreconfiguredCatalogItems();
+                _logger.LogWarning("CatalogItems.csv file not found at {FilePath}", csvFileCatalogItems);
+                return Enumerable.Empty<CatalogItem>();
             }
 
-            string[] csvheaders;
-            string[] requiredHeaders = { "catalogtypename", "catalogbrandname", "description", "name", "price", "pictureFileName" };
-            string[] optionalheaders = { "availablestock", "restockthreshold", "maxstockthreshold", "onreorder" };
-            csvheaders = GetHeaders(csvFileCatalogItems, requiredHeaders, optionalheaders);
+            try
+            {
+                string[] requiredHeaders = { "catalogtypename", "catalogbrandname", "description", "name", "price", "pictureFileName" };
+                string[] optionalheaders = { "availablestock", "restockthreshold", "maxstockthreshold", "onreorder" };
+                string[] csvheaders = GetHeaders(csvFileCatalogItems, requiredHeaders, optionalheaders);
 
-            var catalogTypeIdLookup = context.CatalogTypes.ToDictionary(ct => ct.Type, ct => ct.Id);
-            var catalogBrandIdLookup = context.CatalogBrands.ToDictionary(ct => ct.Brand, ct => ct.Id);
+                var catalogTypeIdLookup = context.CatalogTypes.ToDictionary(ct => ct.Type, ct => ct.Id);
+                var catalogBrandIdLookup = context.CatalogBrands.ToDictionary(ct => ct.Brand, ct => ct.Id);
 
-            return File.ReadAllLines(csvFileCatalogItems)
-                        .Skip(1) // skip header row
-                        .Select(row => Regex.Split(row, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"))
-                        .Select(column => CreateCatalogItem(column, csvheaders, catalogTypeIdLookup, catalogBrandIdLookup))
-                        .Where(x => x != null);
+                return File.ReadAllLines(csvFileCatalogItems)
+                            .Skip(1) // skip header row
+                            .Select(row => Regex.Split(row, ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"))
+                            .Select(column => CreateCatalogItem(column, csvheaders, catalogTypeIdLookup, catalogBrandIdLookup))
+                            .Where(x => x != null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reading CatalogItems from file: {FilePath}", csvFileCatalogItems);
+                return Enumerable.Empty<CatalogItem>();
+            }
         }
 
-        static CatalogItem CreateCatalogItem(string[] column, string[] headers, Dictionary<String, int> catalogTypeIdLookup, Dictionary<String, int> catalogBrandIdLookup)
+        private static CatalogItem CreateCatalogItem(string[] column, string[] headers, Dictionary<string, int> catalogTypeIdLookup, Dictionary<string, int> catalogBrandIdLookup)
         {
-            if (column.Count() != headers.Count())
+            if (column.Length != headers.Length)
             {
-                throw new Exception($"column count '{column.Count()}' not the same as headers count'{headers.Count()}'");
+                throw new ArgumentException($"Column count '{column.Length}' not the same as headers count'{headers.Length}'");
             }
 
             string catalogTypeName = column[Array.IndexOf(headers, "catalogtypename")].Trim('"').Trim();
             if (!catalogTypeIdLookup.ContainsKey(catalogTypeName))
             {
-                throw new Exception($"type={catalogTypeName} does not exist in catalogTypes");
+                throw new ArgumentException($"Type={catalogTypeName} does not exist in catalogTypes");
             }
 
             string catalogBrandName = column[Array.IndexOf(headers, "catalogbrandname")].Trim('"').Trim();
             if (!catalogBrandIdLookup.ContainsKey(catalogBrandName))
             {
-                throw new Exception($"brand={catalogBrandName} does not exist in catalogBrands");
+                throw new ArgumentException($"Brand={catalogBrandName} does not exist in catalogBrands");
             }
 
             string priceString = column[Array.IndexOf(headers, "price")].Trim('"').Trim();
-            if (!Decimal.TryParse(priceString, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out Decimal price))
+            if (!decimal.TryParse(priceString, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal price))
             {
-                throw new Exception($"price={priceString} is not a valid decimal number");
+                throw new ArgumentException($"Price={priceString} is not a valid decimal number");
             }
 
             var catalogItem = new CatalogItem()
@@ -270,91 +254,69 @@ namespace eShopLegacyMVC.Models.Infrastructure
                 PictureFileName = column[Array.IndexOf(headers, "picturefilename")].Trim('"').Trim(),
             };
 
-            int availableStockIndex = Array.IndexOf(headers, "availablestock");
-            if (availableStockIndex != -1)
-            {
-                string availableStockString = column[availableStockIndex].Trim('"').Trim();
-                if (!String.IsNullOrEmpty(availableStockString))
-                {
-                    if (int.TryParse(availableStockString, out int availableStock))
-                    {
-                        catalogItem.AvailableStock = availableStock;
-                    }
-                    else
-                    {
-                        throw new Exception($"availableStock={availableStockString} is not a valid integer");
-                    }
-                }
-            }
-
-            int restockThresholdIndex = Array.IndexOf(headers, "restockthreshold");
-            if (restockThresholdIndex != -1)
-            {
-                string restockThresholdString = column[restockThresholdIndex].Trim('"').Trim();
-                if (!String.IsNullOrEmpty(restockThresholdString))
-                {
-                    if (int.TryParse(restockThresholdString, out int restockThreshold))
-                    {
-                        catalogItem.RestockThreshold = restockThreshold;
-                    }
-                    else
-                    {
-                        throw new Exception($"restockThreshold={restockThresholdString} is not a valid integer");
-                    }
-                }
-            }
-
-            int maxStockThresholdIndex = Array.IndexOf(headers, "maxstockthreshold");
-            if (maxStockThresholdIndex != -1)
-            {
-                string maxStockThresholdString = column[maxStockThresholdIndex].Trim('"').Trim();
-                if (!String.IsNullOrEmpty(maxStockThresholdString))
-                {
-                    if (int.TryParse(maxStockThresholdString, out int maxStockThreshold))
-                    {
-                        catalogItem.MaxStockThreshold = maxStockThreshold;
-                    }
-                    else
-                    {
-                        throw new Exception($"maxStockThreshold={maxStockThresholdString} is not a valid integer");
-                    }
-                }
-            }
-
-            int onReorderIndex = Array.IndexOf(headers, "onreorder");
-            if (onReorderIndex != -1)
-            {
-                string onReorderString = column[onReorderIndex].Trim('"').Trim();
-                if (!String.IsNullOrEmpty(onReorderString))
-                {
-                    if (bool.TryParse(onReorderString, out bool onReorder))
-                    {
-                        catalogItem.OnReorder = onReorder;
-                    }
-                    else
-                    {
-                        throw new Exception($"onReorder={onReorderString} is not a valid boolean");
-                    }
-                }
-            }
+            // Handle optional fields
+            SetOptionalIntProperty(column, headers, "availablestock", value => catalogItem.AvailableStock = value);
+            SetOptionalIntProperty(column, headers, "restockthreshold", value => catalogItem.RestockThreshold = value);
+            SetOptionalIntProperty(column, headers, "maxstockthreshold", value => catalogItem.MaxStockThreshold = value);
+            SetOptionalBoolProperty(column, headers, "onreorder", value => catalogItem.OnReorder = value);
 
             return catalogItem;
         }
 
-        static string[] GetHeaders(string csvfile, string[] requiredHeaders, string[] optionalHeaders = null)
+        private static void SetOptionalIntProperty(string[] column, string[] headers, string headerName, Action<int> setter)
+        {
+            int index = Array.IndexOf(headers, headerName);
+            if (index != -1)
+            {
+                string valueString = column[index].Trim('"').Trim();
+                if (!string.IsNullOrEmpty(valueString))
+                {
+                    if (int.TryParse(valueString, out int value))
+                    {
+                        setter(value);
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"{headerName}={valueString} is not a valid integer");
+                    }
+                }
+            }
+        }
+
+        private static void SetOptionalBoolProperty(string[] column, string[] headers, string headerName, Action<bool> setter)
+        {
+            int index = Array.IndexOf(headers, headerName);
+            if (index != -1)
+            {
+                string valueString = column[index].Trim('"').Trim();
+                if (!string.IsNullOrEmpty(valueString))
+                {
+                    if (bool.TryParse(valueString, out bool value))
+                    {
+                        setter(value);
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"{headerName}={valueString} is not a valid boolean");
+                    }
+                }
+            }
+        }
+
+        private static string[] GetHeaders(string csvfile, string[] requiredHeaders, string[] optionalHeaders = null)
         {
             string[] csvheaders = File.ReadLines(csvfile).First().ToLowerInvariant().Split(',');
 
-            if (csvheaders.Count() < requiredHeaders.Count())
+            if (csvheaders.Length < requiredHeaders.Length)
             {
-                throw new Exception($"requiredHeader count '{ requiredHeaders.Count()}' is bigger then csv header count '{csvheaders.Count()}' ");
+                throw new ArgumentException($"Required header count '{requiredHeaders.Length}' is bigger than csv header count '{csvheaders.Length}'");
             }
 
             if (optionalHeaders != null)
             {
-                if (csvheaders.Count() > (requiredHeaders.Count() + optionalHeaders.Count()))
+                if (csvheaders.Length > (requiredHeaders.Length + optionalHeaders.Length))
                 {
-                    throw new Exception($"csv header count '{csvheaders.Count()}'  is larger then required '{requiredHeaders.Count()}' and optional '{optionalHeaders.Count()}' headers count");
+                    throw new ArgumentException($"CSV header count '{csvheaders.Length}' is larger than required '{requiredHeaders.Length}' and optional '{optionalHeaders.Length}' headers count");
                 }
             }
 
@@ -362,69 +324,55 @@ namespace eShopLegacyMVC.Models.Infrastructure
             {
                 if (!csvheaders.Contains(requiredHeader.ToLowerInvariant()))
                 {
-                    throw new Exception($"does not contain required header '{requiredHeader}'");
+                    throw new ArgumentException($"CSV does not contain required header '{requiredHeader}'");
                 }
             }
 
             return csvheaders;
         }
 
-        private static int GetSequenceIdFromSelectedDBSequence(CatalogDBContext context, string dBSequenceName)
+        private Task AddCatalogItemPicturesAsync()
         {
-            var rawQuery = context.Database.SqlQueryRaw<long>($"SELECT NEXT VALUE FOR {dBSequenceName}");
-            var sequenceId = (int)rawQuery.Single();
-            return sequenceId;
-        }
+            if (!_useCustomizationData)
+            {
+                return Task.CompletedTask;
+            }
 
-        private void ExecuteScript(CatalogDBContext context, string scriptFile)
-        {
+            var contentRootPath = _environment.ContentRootPath;
+            DirectoryInfo picturePath = new DirectoryInfo(Path.Combine(contentRootPath, "wwwroot", "Pics"));
+            
             try
             {
-                var scriptFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, scriptFile);
-                if (File.Exists(scriptFilePath))
+                // Create directory if it doesn't exist
+                if (!picturePath.Exists)
                 {
-                    var script = File.ReadAllText(scriptFilePath);
-                    context.Database.ExecuteSqlRaw(script);
-                    _logger.LogInformation("Executed script: {ScriptFile}", scriptFile);
+                    picturePath.Create();
+                }
+                
+                // Clear existing pictures
+                foreach (FileInfo file in picturePath.GetFiles())
+                {
+                    file.Delete();
+                }
+                
+                string zipFileCatalogItemPictures = Path.Combine(contentRootPath, "Setup", "CatalogItems.zip");
+                if (File.Exists(zipFileCatalogItemPictures))
+                {
+                    ZipFile.ExtractToDirectory(zipFileCatalogItemPictures, picturePath.ToString());
+                    _logger.LogInformation("Extracted catalog item pictures from {ZipFile}", zipFileCatalogItemPictures);
                 }
                 else
                 {
-                    _logger.LogWarning("Script file not found: {ScriptFilePath}", scriptFilePath);
+                    _logger.LogWarning("Catalog items zip file not found: {ZipFile}", zipFileCatalogItemPictures);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error executing script: {ScriptFile}", scriptFile);
-                // Don't throw, as the script might already be executed
+                _logger.LogError(ex, "Error processing catalog item pictures");
+                // Don't throw, as this is not critical for database functionality
             }
-        }
 
-        private void AddCatalogItemPictures()
-        {
-            if (!_useCustomizationData)
-            {
-                return;
-            }
-            var contentRootPath = _environment.ContentRootPath;
-            DirectoryInfo picturePath = new DirectoryInfo(Path.Combine(contentRootPath, "wwwroot", "Pics"));
-            
-            // Create directory if it doesn't exist
-            if (!picturePath.Exists)
-            {
-                picturePath.Create();
-            }
-            
-            foreach (FileInfo file in picturePath.GetFiles())
-            {
-                file.Delete();
-            }
-            
-            string zipFileCatalogItemPictures = Path.Combine(contentRootPath, "Setup", "CatalogItems.zip");
-            if (File.Exists(zipFileCatalogItemPictures))
-            {
-                ZipFile.ExtractToDirectory(zipFileCatalogItemPictures, picturePath.ToString());
-                _logger.LogInformation("Extracted catalog item pictures from {ZipFile}", zipFileCatalogItemPictures);
-            }
+            return Task.CompletedTask;
         }
     }
 }

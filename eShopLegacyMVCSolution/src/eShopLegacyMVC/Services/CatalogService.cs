@@ -54,7 +54,6 @@ namespace eShopLegacyMVC.Services
 
         public void CreateCatalogItem(CatalogItem catalogItem)
         {
-            catalogItem.Id = _indexGenerator.GetNextSequenceValue(_db);
             _db.CatalogItems.Add(catalogItem);
             _db.SaveChanges();
         }
