@@ -8,8 +8,6 @@ namespace eShopLegacyMVC
 {
     public class MvcApplication : HttpApplication
     {
-        private readonly ILogger<MvcApplication> _logger;
-
         public MvcApplication()
         {
             // Note: In a real scenario, you might want to use a different logging approach for Global.asax
