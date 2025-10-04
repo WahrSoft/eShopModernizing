@@ -6,58 +6,37 @@
   <ItemGroup>
     <PackageReference Include="Autofac" Version="6.1.0" />
     <PackageReference Include="autofac.webapi2" Version="6.0.1" />
-    <PackageReference Include="EntityFramework" Version="6.2.0" />
-    <Reference Include="Microsoft.CSharp" />
+    <PackageReference Include="EntityFramework" Version="6.5.1" />
     <PackageReference Include="Microsoft.AspNet.WebApi" Version="5.2.7" />
     <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.7" />
     <PackageReference Include="Microsoft.AspNet.WebApi.Core" Version="5.2.7" />
     <PackageReference Include="Microsoft.AspNet.WebApi.WebHost" Version="5.2.7" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Pipelines.Sockets.Unofficial" Version="1.0.7" />
-    <PackageReference Include="System.Buffers" Version="4.4.0" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="4.5.1" />
-    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="4.5.0" />
-    <PackageReference Include="System.IO.Compression" Version="4.3.0" />
-    <PackageReference Include="System.IO.Compression.ZipFile" Version="4.3.0" />
-    <PackageReference Include="System.IO.Pipelines" Version="4.5.1" />
-    <Reference Include="System.Management" />
-    <PackageReference Include="System.Memory" Version="4.5.1" />
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="8.0.1" />
+    <PackageReference Include="System.IO.Pipelines" Version="8.0.0" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
-    <PackageReference Include="System.Numerics.Vectors" Version="4.4.0" />
-    <Reference Include="System.Runtime.Caching" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.0" />
-    <PackageReference Include="System.Threading.Channels" Version="4.5.0" />
-    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.1" />
-    <Reference Include="System.ComponentModel.DataAnnotations" />
-    <Reference Include="System.Configuration" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+    <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
     <PackageReference Include="WebGrease" Version="1.6.0" />
-    <PackageReference Include="Antlr" Version="3.5.0.2" />
+    <PackageReference Include="Antlr" Version="4.6.6" />
     <PackageReference Include="log4net" Version="2.0.10" />
-    <PackageReference Include="Microsoft.ApplicationInsights" Version="2.9.1" />
-    <PackageReference Include="Microsoft.AspNet.SessionState.SessionStateModule" Version="1.1.0" />
-    <PackageReference Include="Microsoft.AspNet.TelemetryCorrelation" Version="1.0.5" />
-    <PackageReference Include="Microsoft.CodeDom.Providers.DotNetCompilerPlatform" Version="2.0.1" />
-    <PackageReference Include="Microsoft.Web.Infrastructure" Version="1.0.0.0" />
-    <PackageReference Include="Autofac.Mvc5" Version="4.0.2" />
-    <PackageReference Include="bootstrap" Version="4.3.1" />
-    <PackageReference Include="jQuery" Version="3.5.0" />
+    <PackageReference Include="Microsoft.ApplicationInsights" Version="2.23.0" />
+    <PackageReference Include="Microsoft.AspNet.TelemetryCorrelation" Version="1.0.3" />
+    <PackageReference Include="bootstrap" Version="5.3.8" />
+    <PackageReference Include="jQuery" Version="3.7.1" />
     <PackageReference Include="jQuery.Validation" Version="1.19.4" />
-    <PackageReference Include="Microsoft.ApplicationInsights.Agent.Intercept" Version="2.4.0" />
-    <PackageReference Include="Microsoft.ApplicationInsights.DependencyCollector" Version="2.9.1" />
-    <PackageReference Include="Microsoft.ApplicationInsights.PerfCounterCollector" Version="2.9.1" />
-    <PackageReference Include="Microsoft.ApplicationInsights.Web" Version="2.9.1" />
-    <PackageReference Include="Microsoft.ApplicationInsights.WindowsServer" Version="2.9.1" />
-    <PackageReference Include="Microsoft.ApplicationInsights.WindowsServer.TelemetryChannel" Version="2.9.1" />
-    <PackageReference Include="Microsoft.AspNet.Mvc" Version="5.2.7" />
-    <PackageReference Include="Microsoft.AspNet.Razor" Version="3.2.7" />
-    <PackageReference Include="Microsoft.AspNet.Web.Optimization" Version="1.1.3" />
-    <PackageReference Include="Microsoft.AspNet.WebPages" Version="3.2.7" />
-    <PackageReference Include="Microsoft.jQuery.Unobtrusive.Validation" Version="3.2.11" />
-    <PackageReference Include="Microsoft.Net.Compilers" Version="2.10.0" />
+    <PackageReference Include="Microsoft.ApplicationInsights.DependencyCollector" Version="2.23.0" />
+    <PackageReference Include="Microsoft.ApplicationInsights.PerfCounterCollector" Version="2.23.0" />
+    <PackageReference Include="Microsoft.ApplicationInsights.WindowsServer" Version="2.23.0" />
+    <PackageReference Include="Microsoft.ApplicationInsights.WindowsServer.TelemetryChannel" Version="2.23.0" />
+    <PackageReference Include="Microsoft.jQuery.Unobtrusive.Validation" Version="4.0.0" />
     <PackageReference Include="Modernizr" Version="2.8.3" />
     <PackageReference Include="popper.js" Version="1.14.3" />
     <PackageReference Include="Respond" Version="1.4.2" />
+    <PackageReference Include="Microsoft.AspNetCore.SystemWebAdapters" Version="2.0.0" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="9.0.9" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Global.asax.cs">
