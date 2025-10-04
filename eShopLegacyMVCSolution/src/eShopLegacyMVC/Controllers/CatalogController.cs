@@ -1,27 +1,27 @@
 ﻿using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.Extensions.Logging;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Services;
-using log4net;
 
 namespace eShopLegacyMVC.Controllers
 {
     public class CatalogController : Controller
     {
-        private static readonly ILog _log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
+        private readonly ILogger<CatalogController> _logger;
         private ICatalogService service;
 
-        public CatalogController(ICatalogService service)
+        public CatalogController(ICatalogService service, ILogger<CatalogController> logger)
         {
             this.service = service;
+            _logger = logger;
         }
 
         // GET /[?pageSize=3&pageIndex=10]
         public ActionResult Index(int pageSize = 10, int pageIndex = 0)
         {
-            _log.Info($"Now loading... /Catalog/Index?pageSize={pageSize}&pageIndex={pageIndex}");
+            _logger.LogInformation("Now loading... /Catalog/Index?pageSize={PageSize}&pageIndex={PageIndex}", pageSize, pageIndex);
             var paginatedItems = service.GetCatalogItemsPaginated(pageSize, pageIndex);
             ChangeUriPlaceholder(paginatedItems.Data);
             return View(paginatedItems);
@@ -30,7 +30,7 @@ namespace eShopLegacyMVC.Controllers
         // GET: Catalog/Details/5
         public ActionResult Details(int? id)
         {
-            _log.Info($"Now loading... /Catalog/Details?id={id}");
+            _logger.LogInformation("Now loading... /Catalog/Details?id={Id}", id);
             if (id == null)
             {
                 return BadRequest();
@@ -48,7 +48,7 @@ namespace eShopLegacyMVC.Controllers
         // GET: Catalog/Create
         public ActionResult Create()
         {
-            _log.Info($"Now loading... /Catalog/Create");
+            _logger.LogInformation("Now loading... /Catalog/Create");
             ViewBag.CatalogBrandId = new SelectList(service.GetCatalogBrands(), "Id", "Brand");
             ViewBag.CatalogTypeId = new SelectList(service.GetCatalogTypes(), "Id", "Type");
             return View(new CatalogItem());
@@ -59,7 +59,7 @@ namespace eShopLegacyMVC.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Create(CatalogItem catalogItem)
         {
-            _log.Info($"Now processing... /Catalog/Create?catalogItemName={catalogItem.Name}");
+            _logger.LogInformation("Now processing... /Catalog/Create?catalogItemName={CatalogItemName}", catalogItem.Name);
             if (ModelState.IsValid)
             {
                 service.CreateCatalogItem(catalogItem);
@@ -74,7 +74,7 @@ namespace eShopLegacyMVC.Controllers
         // GET: Catalog/Edit/5
         public ActionResult Edit(int? id)
         {
-            _log.Info($"Now loading... /Catalog/Edit?id={id}");
+            _logger.LogInformation("Now loading... /Catalog/Edit?id={Id}", id);
             if (id == null)
             {
                 return BadRequest();
@@ -95,7 +95,7 @@ namespace eShopLegacyMVC.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult Edit(CatalogItem catalogItem)
         {
-            _log.Info($"Now processing... /Catalog/Edit?id={catalogItem.Id}");
+            _logger.LogInformation("Now processing... /Catalog/Edit?id={Id}", catalogItem.Id);
             if (ModelState.IsValid)
             {
                 service.UpdateCatalogItem(catalogItem);
@@ -109,7 +109,7 @@ namespace eShopLegacyMVC.Controllers
         // GET: Catalog/Delete/5
         public ActionResult Delete(int? id)
         {
-            _log.Info($"Now loading... /Catalog/Delete?id={id}");
+            _logger.LogInformation("Now loading... /Catalog/Delete?id={Id}", id);
             if (id == null)
             {
                 return BadRequest();
@@ -129,7 +129,7 @@ namespace eShopLegacyMVC.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult DeleteConfirmed(int id)
         {
-            _log.Info($"Now processing... /Catalog/DeleteConfirmed?id={id}");
+            _logger.LogInformation("Now processing... /Catalog/DeleteConfirmed?id={Id}", id);
             CatalogItem catalogItem = service.FindCatalogItem(id);
             service.RemoveCatalogItem(catalogItem);
             return RedirectToAction("Index");
@@ -148,7 +148,7 @@ namespace eShopLegacyMVC.Controllers
 
         protected override void Dispose(bool disposing)
         {
-            _log.Debug($"Now disposing");
+            _logger.LogDebug("Now disposing CatalogController");
             if (disposing)
             {
                 service.Dispose();

@@ -2,24 +2,27 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.Services;
-using System.Data.Entity;
-using log4net;
 using System.Reflection;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 using System;
-using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using eShopLegacyMVC;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure log4net
-var logRepository = LogManager.GetRepository(Assembly.GetEntryAssembly());
-log4net.Config.XmlConfigurator.Configure(logRepository, new FileInfo("log4net.config"));
+// Configure ASP.NET Core logging
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+builder.Logging.AddEventSourceLogger();
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
@@ -29,6 +32,26 @@ builder.Services.AddControllers();
 
 // Add session support
 builder.Services.AddSession();
+
+// Configure Entity Framework Core
+builder.Services.AddDbContext<CatalogDBContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("CatalogDBContext"),
+        sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorNumbersToAdd: null);
+        });
+    
+    // Enable sensitive data logging in development
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+});
 
 // Register application services
 RegisterApplicationServices(builder.Services, builder.Configuration);
@@ -63,23 +86,55 @@ app.Use(async (context, next) =>
 // Custom middleware for logging (converted from Application_BeginRequest)
 app.Use(async (context, next) =>
 {
-    LogicalThreadContext.Properties["activityid"] = new ActivityIdHelper();
-    LogicalThreadContext.Properties["requestinfo"] = new WebRequestInfo(context);
-
-    var log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-    log.Debug("WebApplication_BeginRequest");
-
-    await next();
+    using var scope = app.Services.CreateScope();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    // Set correlation properties (equivalent to log4net LogicalThreadContext)
+    var activityId = Activity.Current?.Id ?? Guid.NewGuid().ToString();
+    var requestInfo = $"{context.Request.Path}, {context.Request.Headers.UserAgent}";
+    
+    using (logger.BeginScope(new Dictionary<string, object>
+    {
+        ["ActivityId"] = activityId,
+        ["RequestInfo"] = requestInfo
+    }))
+    {
+        logger.LogDebug("WebApplication_BeginRequest for {RequestPath}", context.Request.Path);
+        await next();
+    }
 });
 
-// Initialize database
+// Initialize database with EF Core
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    var context = services.GetRequiredService<CatalogDBContext>();
     var mockData = app.Configuration.GetValue<bool>("AppSettings:UseMockData");
-    if (!mockData)
+    
+    try
     {
-        Database.SetInitializer(services.GetRequiredService<CatalogDBInitializer>());
+        if (!mockData)
+        {
+            var initializer = services.GetRequiredService<CatalogDBInitializer>();
+            initializer.Seed(context);
+            logger.LogInformation("Database initialization completed.");
+        }
+        else
+        {
+            // Just ensure the database exists for mock data scenario
+            context.Database.EnsureCreated();
+            logger.LogInformation("Database ensured for mock data scenario.");
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while initializing the database.");
+        // In production, you might want to handle this differently
+        if (app.Environment.IsDevelopment())
+        {
+            throw;
+        }
     }
 }
 
@@ -112,12 +167,8 @@ static void RegisterApplicationServices(IServiceCollection services, IConfigurat
         services.AddScoped<ICatalogService, CatalogService>();
     }
 
-    // Register EntityFramework DbContext
-    services.AddScoped<CatalogDBContext>(provider =>
-        new CatalogDBContext($"name={configuration.GetConnectionString("CatalogDBContext")}"));
-
-    // Register initializer and its dependencies
-    services.AddSingleton<CatalogItemHiLoGenerator>();
+    // Register EF Core related services
+    services.AddScoped<CatalogItemHiLoGenerator>();
     services.AddScoped<CatalogDBInitializer>();
 }
 

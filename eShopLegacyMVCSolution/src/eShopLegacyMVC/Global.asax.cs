@@ -1,4 +1,4 @@
-﻿using log4net;
+﻿using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
 using System.Reflection;
@@ -8,7 +8,13 @@ namespace eShopLegacyMVC
 {
     public class MvcApplication : HttpApplication
     {
-        private static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private readonly ILogger<MvcApplication> _logger;
+
+        public MvcApplication()
+        {
+            // Note: In a real scenario, you might want to use a different logging approach for Global.asax
+            // since dependency injection is not readily available here. This is mainly kept for compatibility.
+        }
 
         protected void Application_Start()
         {
@@ -27,12 +33,9 @@ namespace eShopLegacyMVC
 
         protected void Application_BeginRequest(object sender, EventArgs e)
         {
-            //set the property to our new object
-            LogicalThreadContext.Properties["activityid"] = new ActivityIdHelper();
-
-            LogicalThreadContext.Properties["requestinfo"] = new WebRequestInfo();
-
-            _log.Debug("WebApplication_BeginRequest");
+            // Note: This functionality has been moved to middleware in Program.cs
+            // This method is kept for compatibility with System Web Adapters
+            // Logging is now handled by the middleware pipeline
         }
     }
 

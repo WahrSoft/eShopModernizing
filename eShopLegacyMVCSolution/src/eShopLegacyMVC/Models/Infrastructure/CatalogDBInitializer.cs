@@ -1,18 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Configuration;
-using System.Data.Entity;
+using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Web;
-using System.Web.Hosting;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace eShopLegacyMVC.Models.Infrastructure
 {
-    public class CatalogDBInitializer : CreateDatabaseIfNotExists<CatalogDBContext>
+    public class CatalogDBInitializer
     {
         private const string DBCatalogSequenceName = "catalog_type_hilo";
         private const string DBBrandSequenceName = "catalog_brand_hilo";
@@ -20,31 +20,62 @@ namespace eShopLegacyMVC.Models.Infrastructure
         private const string CatalogBrandHiLoSequenceScript = @"Models\Infrastructure\dbo.catalog_brand_hilo.Sequence.sql";
         private const string CatalogTypeHiLoSequenceScript = @"Models\Infrastructure\dbo.catalog_type_hilo.Sequence.sql";
 
-        private CatalogItemHiLoGenerator indexGenerator;
-        private bool useCustomizationData;
+        private readonly CatalogItemHiLoGenerator _indexGenerator;
+        private readonly bool _useCustomizationData;
+        private readonly IConfiguration _configuration;
+        private readonly IWebHostEnvironment _environment;
+        private readonly ILogger<CatalogDBInitializer> _logger;
 
-        public CatalogDBInitializer(CatalogItemHiLoGenerator indexGenerator)
+        public CatalogDBInitializer(
+            CatalogItemHiLoGenerator indexGenerator, 
+            IConfiguration configuration, 
+            IWebHostEnvironment environment,
+            ILogger<CatalogDBInitializer> logger)
         {
-            this.indexGenerator = indexGenerator;
-            useCustomizationData = bool.Parse(ConfigurationManager.AppSettings["UseCustomizationData"]);
+            _indexGenerator = indexGenerator;
+            _configuration = configuration;
+            _environment = environment;
+            _logger = logger;
+            _useCustomizationData = _configuration.GetValue<bool>("AppSettings:UseCustomizationData");
         }
 
-        protected override void Seed(CatalogDBContext context)
+        public void Seed(CatalogDBContext context)
         {
-            ExecuteScript(context, CatalogItemHiLoSequenceScript);
-            ExecuteScript(context, CatalogBrandHiLoSequenceScript);
-            ExecuteScript(context, CatalogTypeHiLoSequenceScript);
+            try
+            {
+                _logger.LogInformation("Starting database seeding...");
 
-            AddCatalogTypes(context);
-            AddCatalogBrands(context);
-            AddCatalogItems(context);
-            AddCatalogItemPictures();
-            
+                // Ensure the database is created
+                context.Database.EnsureCreated();
+
+                // Execute sequence scripts
+                ExecuteScript(context, CatalogItemHiLoSequenceScript);
+                ExecuteScript(context, CatalogBrandHiLoSequenceScript);
+                ExecuteScript(context, CatalogTypeHiLoSequenceScript);
+
+                AddCatalogTypes(context);
+                AddCatalogBrands(context);
+                AddCatalogItems(context);
+                AddCatalogItemPictures();
+
+                _logger.LogInformation("Database seeding completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while seeding the database.");
+                throw;
+            }
         }
 
         private void AddCatalogTypes(CatalogDBContext context)
         {
-            var preconfiguredTypes = useCustomizationData
+            if (context.CatalogTypes.Any())
+            {
+                _logger.LogInformation("CatalogTypes already exist. Skipping seeding.");
+                return;
+            }
+
+            var preconfiguredTypes = _useCustomizationData
                 ? GetCatalogTypesFromFile()
                 : PreconfiguredData.GetPreconfiguredCatalogTypes();
 
@@ -57,11 +88,18 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
 
             context.SaveChanges();
+            _logger.LogInformation("Added {Count} catalog types.", preconfiguredTypes.Count());
         }
 
         private void AddCatalogBrands(CatalogDBContext context)
         {
-            var preconfiguredBrands = useCustomizationData
+            if (context.CatalogBrands.Any())
+            {
+                _logger.LogInformation("CatalogBrands already exist. Skipping seeding.");
+                return;
+            }
+
+            var preconfiguredBrands = _useCustomizationData
                 ? GetCatalogBrandsFromFile()
                 : PreconfiguredData.GetPreconfiguredCatalogBrands();
 
@@ -74,27 +112,35 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
 
             context.SaveChanges();
+            _logger.LogInformation("Added {Count} catalog brands.", preconfiguredBrands.Count());
         }
 
         private void AddCatalogItems(CatalogDBContext context)
         {
-            var preconfiguredItems = useCustomizationData
+            if (context.CatalogItems.Any())
+            {
+                _logger.LogInformation("CatalogItems already exist. Skipping seeding.");
+                return;
+            }
+
+            var preconfiguredItems = _useCustomizationData
                 ? GetCatalogItemsFromFile(context)
                 : PreconfiguredData.GetPreconfiguredCatalogItems();
 
             foreach (var item in preconfiguredItems)
             {
-                var sequenceId = indexGenerator.GetNextSequenceValue(context);
+                var sequenceId = _indexGenerator.GetNextSequenceValue(context);
                 item.Id = sequenceId;
                 context.CatalogItems.Add(item);
             }
 
             context.SaveChanges();
+            _logger.LogInformation("Added {Count} catalog items.", preconfiguredItems.Count());
         }
 
         private IEnumerable<CatalogType> GetCatalogTypesFromFile()
         {
-            var contentRootPath = HostingEnvironment.ApplicationPhysicalPath;
+            var contentRootPath = _environment.ContentRootPath;
             string csvFileCatalogTypes = Path.Combine(contentRootPath, "Setup", "CatalogTypes.csv");
 
             if (!File.Exists(csvFileCatalogTypes))
@@ -128,9 +174,9 @@ namespace eShopLegacyMVC.Models.Infrastructure
             };
         }
 
-        static IEnumerable<CatalogBrand> GetCatalogBrandsFromFile()
+        private IEnumerable<CatalogBrand> GetCatalogBrandsFromFile()
         {
-            var contentRootPath = HostingEnvironment.ApplicationPhysicalPath;
+            var contentRootPath = _environment.ContentRootPath;
             string csvFileCatalogBrands = Path.Combine(contentRootPath, "Setup", "CatalogBrands.csv");
 
             if (!File.Exists(csvFileCatalogBrands))
@@ -164,9 +210,9 @@ namespace eShopLegacyMVC.Models.Infrastructure
             };
         }
 
-        static IEnumerable<CatalogItem> GetCatalogItemsFromFile(CatalogDBContext context)
+        private IEnumerable<CatalogItem> GetCatalogItemsFromFile(CatalogDBContext context)
         {
-            var contentRootPath = HostingEnvironment.ApplicationPhysicalPath;
+            var contentRootPath = _environment.ContentRootPath;
             string csvFileCatalogItems = Path.Combine(contentRootPath, "Setup", "CatalogItems.csv");
 
             if (!File.Exists(csvFileCatalogItems))
@@ -205,13 +251,13 @@ namespace eShopLegacyMVC.Models.Infrastructure
             string catalogBrandName = column[Array.IndexOf(headers, "catalogbrandname")].Trim('"').Trim();
             if (!catalogBrandIdLookup.ContainsKey(catalogBrandName))
             {
-                throw new Exception($"type={catalogTypeName} does not exist in catalogTypes");
+                throw new Exception($"brand={catalogBrandName} does not exist in catalogBrands");
             }
 
             string priceString = column[Array.IndexOf(headers, "price")].Trim('"').Trim();
             if (!Decimal.TryParse(priceString, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out Decimal price))
             {
-                throw new Exception($"price={priceString}is not a valid decimal number");
+                throw new Exception($"price={priceString} is not a valid decimal number");
             }
 
             var catalogItem = new CatalogItem()
@@ -253,7 +299,7 @@ namespace eShopLegacyMVC.Models.Infrastructure
                     }
                     else
                     {
-                        throw new Exception($"restockThreshold={restockThreshold} is not a valid integer");
+                        throw new Exception($"restockThreshold={restockThresholdString} is not a valid integer");
                     }
                 }
             }
@@ -270,7 +316,7 @@ namespace eShopLegacyMVC.Models.Infrastructure
                     }
                     else
                     {
-                        throw new Exception($"maxStockThreshold={maxStockThreshold} is not a valid integer");
+                        throw new Exception($"maxStockThreshold={maxStockThresholdString} is not a valid integer");
                     }
                 }
             }
@@ -325,32 +371,60 @@ namespace eShopLegacyMVC.Models.Infrastructure
 
         private static int GetSequenceIdFromSelectedDBSequence(CatalogDBContext context, string dBSequenceName)
         {
-            var rawQuery = context.Database.SqlQuery<Int64>($"SELECT NEXT VALUE FOR {dBSequenceName}");
+            var rawQuery = context.Database.SqlQueryRaw<long>($"SELECT NEXT VALUE FOR {dBSequenceName}");
             var sequenceId = (int)rawQuery.Single();
             return sequenceId;
         }
 
         private void ExecuteScript(CatalogDBContext context, string scriptFile)
         {
-            var scriptFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, scriptFile);
-            context.Database.ExecuteSqlCommand(File.ReadAllText(scriptFilePath));
+            try
+            {
+                var scriptFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, scriptFile);
+                if (File.Exists(scriptFilePath))
+                {
+                    var script = File.ReadAllText(scriptFilePath);
+                    context.Database.ExecuteSqlRaw(script);
+                    _logger.LogInformation("Executed script: {ScriptFile}", scriptFile);
+                }
+                else
+                {
+                    _logger.LogWarning("Script file not found: {ScriptFilePath}", scriptFilePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing script: {ScriptFile}", scriptFile);
+                // Don't throw, as the script might already be executed
+            }
         }
 
         private void AddCatalogItemPictures()
         {
-            if (!useCustomizationData)
+            if (!_useCustomizationData)
             {
                 return;
             }
-            var contentRootPath = HostingEnvironment.ApplicationPhysicalPath;
-            DirectoryInfo picturePath = new DirectoryInfo(Path.Combine(contentRootPath, "Pics"));
+            var contentRootPath = _environment.ContentRootPath;
+            DirectoryInfo picturePath = new DirectoryInfo(Path.Combine(contentRootPath, "wwwroot", "Pics"));
+            
+            // Create directory if it doesn't exist
+            if (!picturePath.Exists)
+            {
+                picturePath.Create();
+            }
+            
             foreach (FileInfo file in picturePath.GetFiles())
             {
                 file.Delete();
             }
             
             string zipFileCatalogItemPictures = Path.Combine(contentRootPath, "Setup", "CatalogItems.zip");
-            ZipFile.ExtractToDirectory(zipFileCatalogItemPictures, picturePath.ToString());
+            if (File.Exists(zipFileCatalogItemPictures))
+            {
+                ZipFile.ExtractToDirectory(zipFileCatalogItemPictures, picturePath.ToString());
+                _logger.LogInformation("Extracted catalog item pictures from {ZipFile}", zipFileCatalogItemPictures);
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 ﻿using eShopLegacyMVC.Services;
-using log4net;
+using Microsoft.Extensions.Logging;
 using System.IO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Hosting;
@@ -8,17 +8,18 @@ namespace eShopLegacyMVC.Controllers
 {
     public class PicController : Controller
     {
-        private static readonly ILog _log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private readonly ILogger<PicController> _logger;
 
         public const string GetPicRouteName = "GetPicRouteTemplate";
 
         private ICatalogService service;
         private readonly IWebHostEnvironment _environment;
 
-        public PicController(ICatalogService service, IWebHostEnvironment environment)
+        public PicController(ICatalogService service, IWebHostEnvironment environment, ILogger<PicController> logger)
         {
             this.service = service;
             _environment = environment;
+            _logger = logger;
         }
 
         // GET: Pic/5.png
@@ -26,7 +27,7 @@ namespace eShopLegacyMVC.Controllers
         [Route("items/{catalogItemId:int}/pic", Name = GetPicRouteName)]
         public ActionResult Index(int catalogItemId)
         {
-            _log.Info($"Now loading... /items/Index?{catalogItemId}/pic");
+            _logger.LogInformation("Now loading... /items/Index?{CatalogItemId}/pic", catalogItemId);
 
             if (catalogItemId <= 0)
             {
