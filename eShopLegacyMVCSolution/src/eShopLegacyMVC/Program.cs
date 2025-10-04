@@ -29,7 +29,14 @@ app.UseRouting();
 app.UseSession();
 app.UseSystemWebAdapters();
 
+// Map attribute-routed controllers first
 app.MapControllers()
+    .RequireSystemWebAdapterSession();
+
+// Map conventional MVC routes
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Catalog}/{action=Index}/{id?}")
     .RequireSystemWebAdapterSession();
 
 app.Run();
