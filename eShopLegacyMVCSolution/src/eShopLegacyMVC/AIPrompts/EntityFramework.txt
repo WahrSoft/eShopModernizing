@@ -1,0 +1,3 @@
+Migrate to full Entity Framework Core including:
+- Preserve approaches for identity columns to allow for data migration from an existing database 
+- Setup logic needs to change in the EF migration to ensure the seeding logic is in the OnModelCreating,

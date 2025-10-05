@@ -1,14 +1,15 @@
-﻿using System.Web.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 
 namespace eShopLegacyMVC.Controllers.Api
 {
     [Route("api")]
-    public class CatalogController2 : Controller
+    [ApiController]
+    public class CatalogController2 : ControllerBase
     {
         [HttpGet]
-        public ActionResult Index()
+        public IActionResult Index()
         {
-            return Json(new { Message = "Hello World!" });
+            return Ok(new { Message = "Hello World!" });
         }
     }
 }

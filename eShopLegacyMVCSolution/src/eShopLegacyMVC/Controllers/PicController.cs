@@ -1,8 +1,8 @@
 ﻿using eShopLegacyMVC.Services;
 using log4net;
 using System.IO;
-using System.Net;
-using System.Web.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Hosting;
 
 namespace eShopLegacyMVC.Controllers
 {
@@ -13,40 +13,45 @@ namespace eShopLegacyMVC.Controllers
         public const string GetPicRouteName = "GetPicRouteTemplate";
 
         private ICatalogService service;
+        private readonly IWebHostEnvironment _webHostEnvironment;
 
-        public PicController(ICatalogService service)
+        public PicController(ICatalogService service, IWebHostEnvironment webHostEnvironment)
         {
             this.service = service;
+            _webHostEnvironment = webHostEnvironment;
         }
 
         // GET: Pic/5.png
         [HttpGet]
         [Route("items/{catalogItemId:int}/pic", Name = GetPicRouteName)]
-        public ActionResult Index(int catalogItemId)
+        public IActionResult Index(int catalogItemId)
         {
             _log.Info($"Now loading... /items/Index?{catalogItemId}/pic");
 
             if (catalogItemId <= 0)
             {
-                return new HttpStatusCodeResult(HttpStatusCode.BadRequest);
+                return BadRequest();
             }
 
             var item = service.FindCatalogItem(catalogItemId);
 
             if (item != null)
             {
-                var webRoot = Server.MapPath("~/Pics");
+                var webRoot = Path.Combine(_webHostEnvironment.WebRootPath, "Pics");
                 var path = Path.Combine(webRoot, item.PictureFileName);
 
-                string imageFileExtension = Path.GetExtension(item.PictureFileName);
-                string mimetype = GetImageMimeTypeFromImageFileExtension(imageFileExtension);
+                if (System.IO.File.Exists(path))
+                {
+                    string imageFileExtension = Path.GetExtension(item.PictureFileName);
+                    string mimetype = GetImageMimeTypeFromImageFileExtension(imageFileExtension);
 
-                var buffer = System.IO.File.ReadAllBytes(path);
+                    var buffer = System.IO.File.ReadAllBytes(path);
 
-                return File(buffer, mimetype);
+                    return File(buffer, mimetype);
+                }
             }
 
-            return HttpNotFound();
+            return NotFound();
         }
 
         private string GetImageMimeTypeFromImageFileExtension(string extension)
