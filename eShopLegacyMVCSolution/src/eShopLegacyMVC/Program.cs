@@ -28,6 +28,15 @@ builder.Services.AddApplicationInsightsTelemetry(options =>
     options.EnableRequestTrackingTelemetryModule = true;
 });
 
+// Configure session services
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
 // Configure Autofac
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
@@ -65,13 +74,22 @@ using (var scope = app.Services.CreateScope())
 
 if (!app.Environment.IsDevelopment())
 {
+    app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
+}
+else
+{
+    app.UseDeveloperExceptionPage();
 }
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+// Add session middleware BEFORE accessing session
+app.UseSession();
+app.UseSystemWebAdapters();
 
 // Custom middleware for session tracking (replaces Session_Start)
 app.Use(async (context, next) =>
@@ -102,9 +120,6 @@ app.Use(async (context, next) =>
     
     await next();
 });
-
-app.UseSession();
-app.UseSystemWebAdapters();
 
 app.MapControllers();
 

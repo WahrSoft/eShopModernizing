@@ -11,6 +11,10 @@ namespace eShopLegacyMVC.Models
         {
         }
 
+        public CatalogDBContext(string connectionString) : base(connectionString)
+        {
+        }
+
         public DbSet<CatalogItem> CatalogItems { get; set; }
 
         public DbSet<CatalogBrand> CatalogBrands { get; set; }
