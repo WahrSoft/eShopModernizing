@@ -286,6 +286,13 @@
     <Compile Include="ViewModel\PaginatedItemsViewModel.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="AIPrompts\ASMX.txt" />
+    <Content Include="AIPrompts\EntityFramework.txt" />
+    <Content Include="AIPrompts\General.txt" />
+    <Content Include="AIPrompts\Remoting.txt" />
+    <Content Include="AIPrompts\WCF.txt" />
+    <Content Include="AIPrompts\Webforms.txt" />
+    <Content Include="AIPrompts\WindowsWorkflow.txt" />
     <Content Include="Content\base.css" />
     <Content Include="Content\bootstrap-grid.css" />
     <Content Include="Content\bootstrap-grid.min.css" />

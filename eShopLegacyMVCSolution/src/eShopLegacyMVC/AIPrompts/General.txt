@@ -1,0 +1,5 @@
+@Modernize Modernize to .NET 8 with specific chagnes for deployment to Azure using PaaS Services for hosting.  Account for general changes such as:
+- Configuration management to convert all ConfigurationManager to IConfiguration
+- Ensure newest Application Insights is installed and configured.  Upgrade any previous configuration.
+
+Based on the modernization.json , use the other instructions (txt files) in this folder.
