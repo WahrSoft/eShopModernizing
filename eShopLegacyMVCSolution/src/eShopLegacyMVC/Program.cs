@@ -1,13 +1,13 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.Modules;
 using log4net;
-using System.Configuration;
 using System.Data.Entity;
 using System.Reflection;
 using System.Diagnostics;
@@ -22,7 +22,7 @@ builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
     var thisAssembly = Assembly.GetExecutingAssembly();
     containerBuilder.RegisterControllers(thisAssembly);
     
-    var mockData = bool.Parse(ConfigurationManager.AppSettings["UseMockData"]);
+    var mockData = bool.Parse(builder.Configuration["UseMockData"] ?? "false");
     containerBuilder.RegisterModule(new ApplicationModule(mockData));
 });
 
@@ -43,7 +43,8 @@ var app = builder.Build();
 // Configure database
 using (var scope = app.Services.CreateScope())
 {
-    var mockData = bool.Parse(ConfigurationManager.AppSettings["UseMockData"]);
+    var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var mockData = bool.Parse(configuration["UseMockData"] ?? "false");
     if (!mockData)
     {
         var dbInitializer = scope.ServiceProvider.GetRequiredService<CatalogDBInitializer>();
