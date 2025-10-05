@@ -15,6 +15,18 @@ using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Add Application Insights telemetry
+builder.Services.AddApplicationInsightsTelemetry(options =>
+{
+    // Configure Application Insights
+    options.ConnectionString = builder.Configuration.GetConnectionString("ApplicationInsights");
+    options.EnableAdaptiveSampling = true;
+    options.EnableQuickPulseMetricStream = true;
+    options.EnablePerformanceCounterCollectionModule = true;
+    options.EnableDependencyTrackingTelemetryModule = true;
+    options.EnableRequestTrackingTelemetryModule = true;
+});
+
 // Configure Autofac
 builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
