@@ -12,6 +12,7 @@ using System.Data.Entity;
 using System.Reflection;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,7 +33,6 @@ builder.Host.UseServiceProviderFactory(new AutofacServiceProviderFactory());
 builder.Host.ConfigureContainer<ContainerBuilder>(containerBuilder =>
 {
     var thisAssembly = Assembly.GetExecutingAssembly();
-    containerBuilder.RegisterControllers(thisAssembly);
     
     var mockData = bool.Parse(builder.Configuration["UseMockData"] ?? "false");
     containerBuilder.RegisterModule(new ApplicationModule(mockData));
@@ -44,8 +44,7 @@ builder.Services.AddSystemWebAdapters()
     {
         options.RegisterKey<string>("MachineName");
         options.RegisterKey<string>("SessionStartTime");
-    })
-    .AddHttpApplication<MvcApplication>();
+    });
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
@@ -107,12 +106,10 @@ app.Use(async (context, next) =>
 app.UseSession();
 app.UseSystemWebAdapters();
 
-app.MapControllers()
-    .RequireSystemWebAdapterSession();
+app.MapControllers();
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Catalog}/{action=Index}/{id?}")
-    .RequireSystemWebAdapterSession();
+    pattern: "{controller=Catalog}/{action=Index}/{id?}");
 
 app.Run();
