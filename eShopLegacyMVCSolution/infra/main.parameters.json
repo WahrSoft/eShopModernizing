@@ -1,0 +1,36 @@
+﻿{
+    "contentVersion":  "1.0.0.0",
+    "$schema":  "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "parameters":  {
+                       "appServicePlanSku":  {
+                                                 "value":  "S1"
+                                             },
+                       "namePrefix":  {
+                                          "value":  "eshop"
+                                      },
+                       "sqlDatabaseSize":  {
+                                               "value":  "S1"
+                                           },
+                       "currentUserPrincipalName":  {
+                                                        "value":  "andywahrenberger_hotmail.com#EXT#@wahrenberger.onmicrosoft.com"
+                                                    },
+                       "environmentName":  {
+                                               "value":  "prod"
+                                           },
+                       "sqlDatabaseTier":  {
+                                               "value":  "Standard"
+                                           },
+                       "sqlAdminUsername":  {
+                                                "value":  "eshopadmin"
+                                            },
+                       "location":  {
+                                        "value":  "North Central US"
+                                    },
+                       "enableMonitoring":  {
+                                                "value":  true
+                                            },
+                       "currentUserObjectId":  {
+                                                   "value":  "1bc68466-61e0-4b35-9f61-370282a0f277"
+                                               }
+                   }
+}

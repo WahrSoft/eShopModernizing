@@ -1,0 +1,327 @@
+# Azure DevOps Pipeline for eShop Legacy MVC Enterprise Deployment
+# This pipeline builds the application and deploys it to Azure App Service
+# using the enterprise infrastructure created by the Bicep templates
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - src/eShopLegacyMVC/*
+    - infra/*
+
+pr:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - src/eShopLegacyMVC/*
+    - infra/*
+
+variables:
+  # Build Configuration
+  buildConfiguration: 'Release'
+  dotNetVersion: '8.x'
+  
+  # Azure Resource Names (will be set by infrastructure deployment)
+  resourceGroupName: 'rg-eshop-enterprise'
+  appServiceName: ''  # Will be populated from infrastructure output
+  keyVaultName: ''    # Will be populated from infrastructure output
+  
+  # Project Paths
+  projectPath: 'src/eShopLegacyMVC/eShopLegacyMVC.csproj'
+  infraPath: 'infra'
+
+stages:
+- stage: Build
+  displayName: 'Build Application'
+  jobs:
+  - job: Build
+    displayName: 'Build Job'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET $(dotNetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: $(dotNetVersion)
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore NuGet Packages'
+      inputs:
+        command: 'restore'
+        projects: '$(projectPath)'
+        feedsToUse: 'select'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Build Application'
+      inputs:
+        command: 'build'
+        projects: '$(projectPath)'
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Run Unit Tests'
+      inputs:
+        command: 'test'
+        projects: '**/*Tests/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage"'
+      continueOnError: true
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish Application'
+      inputs:
+        command: 'publish'
+        projects: '$(projectPath)'
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/app --no-build'
+        publishWebProjects: false
+        zipAfterPublish: true
+    
+    - task: CopyFiles@2
+      displayName: 'Copy Infrastructure Files'
+      inputs:
+        sourceFolder: '$(infraPath)'
+        contents: '**/*'
+        targetFolder: '$(Build.ArtifactStagingDirectory)/infra'
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'drop'
+
+- stage: DeployInfrastructure
+  displayName: 'Deploy Infrastructure'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployInfra
+    displayName: 'Deploy Infrastructure'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'Production'
+    
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          
+          - task: AzureCLI@2
+            displayName: 'Deploy Infrastructure'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Set variables
+                RG_NAME="$(resourceGroupName)"
+                LOCATION="East US"
+                DEPLOYMENT_NAME="eshop-infra-$(Build.BuildNumber)"
+                
+                # Get current user information
+                CURRENT_USER=$(az ad signed-in-user show --query '{objectId:id, userPrincipalName:userPrincipalName}' -o tsv)
+                CURRENT_USER_OBJECT_ID=$(echo "$CURRENT_USER" | cut -f1)
+                CURRENT_USER_UPN=$(echo "$CURRENT_USER" | cut -f2)
+                
+                echo "Current User Object ID: $CURRENT_USER_OBJECT_ID"
+                echo "Current User UPN: $CURRENT_USER_UPN"
+                
+                # Create resource group
+                az group create --name "$RG_NAME" --location "$LOCATION"
+                
+                # Update parameters file
+                cd $(Pipeline.Workspace)/drop/infra
+                cat > main.parameters.json << EOF
+                {
+                  "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+                  "contentVersion": "1.0.0.0",
+                  "parameters": {
+                    "environmentName": {"value": "prod"},
+                    "location": {"value": "$LOCATION"},
+                    "namePrefix": {"value": "eshop"},
+                    "sqlAdminUsername": {"value": "eshopadmin"},
+                    "currentUserObjectId": {"value": "$CURRENT_USER_OBJECT_ID"},
+                    "currentUserPrincipalName": {"value": "$CURRENT_USER_UPN"},
+                    "enableMonitoring": {"value": true},
+                    "appServicePlanSku": {"value": "S1"},
+                    "sqlDatabaseTier": {"value": "Standard"},
+                    "sqlDatabaseSize": {"value": "S1"}
+                  }
+                }
+                EOF
+                
+                # Validate template
+                echo "Validating Bicep template..."
+                az deployment group validate \
+                  --resource-group "$RG_NAME" \
+                  --template-file main.bicep \
+                  --parameters @main.parameters.json
+                
+                # Deploy infrastructure
+                echo "Deploying infrastructure..."
+                az deployment group create \
+                  --resource-group "$RG_NAME" \
+                  --template-file main.bicep \
+                  --parameters @main.parameters.json \
+                  --name "$DEPLOYMENT_NAME"
+                
+                # Get outputs and set pipeline variables
+                OUTPUTS=$(az deployment group show \
+                  --resource-group "$RG_NAME" \
+                  --name "$DEPLOYMENT_NAME" \
+                  --query 'properties.outputs' \
+                  --output json)
+                
+                APP_SERVICE_NAME=$(echo "$OUTPUTS" | jq -r '.appServiceName.value // empty')
+                KEY_VAULT_NAME=$(echo "$OUTPUTS" | jq -r '.keyVaultName.value // empty')
+                APP_SERVICE_URL=$(echo "$OUTPUTS" | jq -r '.appServiceUrl.value // empty')
+                
+                echo "##vso[task.setvariable variable=appServiceName;isOutput=true]$APP_SERVICE_NAME"
+                echo "##vso[task.setvariable variable=keyVaultName;isOutput=true]$KEY_VAULT_NAME"
+                echo "##vso[task.setvariable variable=appServiceUrl;isOutput=true]$APP_SERVICE_URL"
+                
+                echo "Infrastructure deployed successfully!"
+                echo "App Service: $APP_SERVICE_NAME"
+                echo "Key Vault: $KEY_VAULT_NAME"
+                echo "App URL: $APP_SERVICE_URL"
+            name: infraDeploy
+
+- stage: DeployApplication
+  displayName: 'Deploy Application'
+  dependsOn: 
+  - Build
+  - DeployInfrastructure
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  variables:
+    appServiceName: $[ stageDependencies.DeployInfrastructure.DeployInfra.outputs['infraDeploy.appServiceName'] ]
+    keyVaultName: $[ stageDependencies.DeployInfrastructure.DeployInfra.outputs['infraDeploy.keyVaultName'] ]
+    appServiceUrl: $[ stageDependencies.DeployInfrastructure.DeployInfra.outputs['infraDeploy.appServiceUrl'] ]
+  
+  jobs:
+  - deployment: DeployApp
+    displayName: 'Deploy Application'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'Production'
+    
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          
+          - task: AzureCLI@2
+            displayName: 'Update App Settings'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Configure App Service settings to use Key Vault
+                az webapp config appsettings set \
+                  --resource-group "$(resourceGroupName)" \
+                  --name "$(appServiceName)" \
+                  --settings \
+                    ASPNETCORE_ENVIRONMENT="Production" \
+                    KeyVault__VaultUri="https://$(keyVaultName).vault.azure.net/" \
+                    Azure__UseKeyVault="true"
+                
+                echo "App settings updated successfully"
+          
+          - task: AzureWebApp@1
+            displayName: 'Deploy to App Service'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: 'webAppLinux'
+              appName: '$(appServiceName)'
+              package: '$(Pipeline.Workspace)/drop/app/*.zip'
+              runtimeStack: 'DOTNETCORE|8.0'
+              startUpCommand: ''
+          
+          - task: AzureCLI@2
+            displayName: 'Warm Up Application'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Warming up application..."
+                for i in {1..3}; do
+                  echo "Attempt $i..."
+                  curl -f "$(appServiceUrl)/health" || echo "Health check attempt $i failed"
+                  sleep 10
+                done
+                
+                echo "Application deployment completed!"
+                echo "Application URL: $(appServiceUrl)"
+
+- stage: PostDeploymentTests
+  displayName: 'Post-Deployment Tests'
+  dependsOn: DeployApplication
+  condition: succeeded()
+  variables:
+    appServiceUrl: $[ stageDependencies.DeployInfrastructure.DeployInfra.outputs['infraDeploy.appServiceUrl'] ]
+  
+  jobs:
+  - job: SmokeTests
+    displayName: 'Smoke Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Bash@3
+      displayName: 'Run Smoke Tests'
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "Running smoke tests against $(appServiceUrl)"
+          
+          # Test health endpoints
+          echo "Testing health endpoints..."
+          curl -f "$(appServiceUrl)/health" || exit 1
+          curl -f "$(appServiceUrl)/health/ready" || exit 1
+          curl -f "$(appServiceUrl)/health/live" || exit 1
+          
+          # Test main application
+          echo "Testing main application..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$(appServiceUrl)")
+          if [ $HTTP_STATUS -eq 200 ]; then
+            echo "Application is responding successfully (HTTP $HTTP_STATUS)"
+          else
+            echo "Application health check failed (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+          
+          echo "All smoke tests passed!"
+    
+    - task: AzureCLI@2
+      displayName: 'Verify Application Insights'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Verifying Application Insights telemetry..."
+          
+          # Wait a bit for telemetry to be collected
+          sleep 30
+          
+          # Check if Application Insights is receiving data
+          APP_INSIGHTS_NAME=$(az monitor app-insights component list \
+            --resource-group "$(resourceGroupName)" \
+            --query '[0].name' -o tsv)
+          
+          if [ -n "$APP_INSIGHTS_NAME" ]; then
+            echo "Application Insights component found: $APP_INSIGHTS_NAME"
+            echo "Monitor your application at: https://portal.azure.com"
+          else
+            echo "Warning: Could not verify Application Insights setup"
+          fi
