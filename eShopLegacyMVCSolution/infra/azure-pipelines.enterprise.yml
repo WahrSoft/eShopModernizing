@@ -1,0 +1,407 @@
+# Azure DevOps Pipeline for eShop Legacy MVC Enterprise Deployment
+# Supports both development and production environments with proper approvals
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - src/eShopLegacyMVC/**
+      - eShopLegacy.Utilities/**
+      - infra/**
+      - azure-pipelines.yml
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - src/eShopLegacyMVC/**
+      - eShopLegacy.Utilities/**
+      - infra/**
+
+variables:
+  - name: dotnetVersion
+    value: '8.0.x'
+  - name: buildConfiguration
+    value: 'Release'
+  - name: vmImageName
+    value: 'ubuntu-latest'
+
+stages:
+  - stage: DetermineEnvironment
+    displayName: 'Determine Environment'
+    jobs:
+      - job: SetVariables
+        displayName: 'Set Environment Variables'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - script: |
+              if [[ "$(Build.SourceBranch)" == "refs/heads/main" ]]; then
+                echo "##vso[task.setvariable variable=environment;isOutput=true]prod"
+                echo "##vso[task.setvariable variable=resourceGroup;isOutput=true]rg-eshop-prod"
+              else
+                echo "##vso[task.setvariable variable=environment;isOutput=true]dev"
+                echo "##vso[task.setvariable variable=resourceGroup;isOutput=true]rg-eshop-dev"
+              fi
+            name: envVars
+            displayName: 'Determine Environment'
+
+  - stage: Build
+    displayName: 'Build Application'
+    dependsOn: DetermineEnvironment
+    variables:
+      environment: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.environment'] ]
+    jobs:
+      - job: BuildApp
+        displayName: 'Build .NET Application'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Use .NET $(dotnetVersion)'
+            inputs:
+              packageType: 'sdk'
+              version: $(dotnetVersion)
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Restore NuGet Packages'
+            inputs:
+              command: 'restore'
+              projects: 'eShopLegacyMVCSolution.sln'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build Solution'
+            inputs:
+              command: 'build'
+              projects: 'eShopLegacyMVCSolution.sln'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Run Tests'
+            inputs:
+              command: 'test'
+              projects: 'eShopLegacyMVCSolution.sln'
+              arguments: '--configuration $(buildConfiguration) --no-build --verbosity normal'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Publish Application'
+            inputs:
+              command: 'publish'
+              projects: 'src/eShopLegacyMVC/eShopLegacyMVC.csproj'
+              arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/webapp'
+              publishWebProjects: false
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Build Artifacts'
+            inputs:
+              pathToPublish: '$(Build.ArtifactStagingDirectory)/webapp'
+              artifactName: 'webapp-package'
+
+  - stage: ValidateInfrastructure
+    displayName: 'Validate Infrastructure'
+    dependsOn: DetermineEnvironment
+    variables:
+      environment: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.environment'] ]
+      resourceGroup: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.resourceGroup'] ]
+    jobs:
+      - job: ValidateTemplate
+        displayName: 'Validate Bicep Template'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Install Bicep CLI'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az bicep install
+
+          - task: AzureCLI@2
+            displayName: 'Get Current User Information'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                USER_OBJECT_ID=$(az ad signed-in-user show --query id --output tsv)
+                USER_UPN=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+                echo "##vso[task.setvariable variable=userObjectId]$USER_OBJECT_ID"
+                echo "##vso[task.setvariable variable=userUPN]$USER_UPN"
+
+          - task: AzureCLI@2
+            displayName: 'Create Resource Group'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az group create \
+                  --name $(resourceGroup) \
+                  --location "East US 2" \
+                  --tags Environment=$(environment) Purpose="eShop Legacy MVC"
+
+          - task: AzureCLI@2
+            displayName: 'Validate Bicep Template'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az deployment group validate \
+                  --resource-group $(resourceGroup) \
+                  --template-file infra/main.enterprise.bicep \
+                  --parameters infra/main.$(environment).parameters.enterprise.json \
+                  --parameters currentUserObjectId=$(userObjectId) \
+                  --parameters currentUserPrincipalName=$(userUPN)
+
+          - task: AzureCLI@2
+            displayName: 'Preview Infrastructure Changes'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az deployment group what-if \
+                  --resource-group $(resourceGroup) \
+                  --template-file infra/main.enterprise.bicep \
+                  --parameters infra/main.$(environment).parameters.enterprise.json \
+                  --parameters currentUserObjectId=$(userObjectId) \
+                  --parameters currentUserPrincipalName=$(userUPN)
+
+  - stage: DeployInfrastructureDev
+    displayName: 'Deploy Infrastructure (Dev)'
+    dependsOn: 
+      - DetermineEnvironment
+      - ValidateInfrastructure
+    condition: and(succeeded(), eq(dependencies.DetermineEnvironment.outputs['SetVariables.envVars.environment'], 'dev'))
+    variables:
+      environment: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.environment'] ]
+      resourceGroup: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.resourceGroup'] ]
+    jobs:
+      - deployment: DeployInfra
+        displayName: 'Deploy Infrastructure'
+        pool:
+          vmImage: $(vmImageName)
+        environment: 'development'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: 'Get Current User Information'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      USER_OBJECT_ID=$(az ad signed-in-user show --query id --output tsv)
+                      USER_UPN=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+                      echo "##vso[task.setvariable variable=userObjectId]$USER_OBJECT_ID"
+                      echo "##vso[task.setvariable variable=userUPN]$USER_UPN"
+
+                - task: AzureCLI@2
+                  displayName: 'Deploy Infrastructure'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      deployment_output=$(az deployment group create \
+                        --resource-group $(resourceGroup) \
+                        --template-file infra/main.enterprise.bicep \
+                        --parameters infra/main.$(environment).parameters.enterprise.json \
+                        --parameters currentUserObjectId=$(userObjectId) \
+                        --parameters currentUserPrincipalName=$(userUPN) \
+                        --query 'properties.outputs' \
+                        --output json)
+                      
+                      echo "##vso[task.setvariable variable=webAppName;isOutput=true]$(echo $deployment_output | jq -r '.webAppName.value')"
+                      echo "##vso[task.setvariable variable=webAppUrl;isOutput=true]$(echo $deployment_output | jq -r '.webAppUrl.value')"
+                  name: deploymentOutputs
+
+  - stage: DeployInfrastructureProd
+    displayName: 'Deploy Infrastructure (Prod)'
+    dependsOn: 
+      - DetermineEnvironment
+      - ValidateInfrastructure
+    condition: and(succeeded(), eq(dependencies.DetermineEnvironment.outputs['SetVariables.envVars.environment'], 'prod'))
+    variables:
+      environment: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.environment'] ]
+      resourceGroup: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.resourceGroup'] ]
+    jobs:
+      - deployment: DeployInfra
+        displayName: 'Deploy Infrastructure'
+        pool:
+          vmImage: $(vmImageName)
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: 'Get Current User Information'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      USER_OBJECT_ID=$(az ad signed-in-user show --query id --output tsv)
+                      USER_UPN=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+                      echo "##vso[task.setvariable variable=userObjectId]$USER_OBJECT_ID"
+                      echo "##vso[task.setvariable variable=userUPN]$USER_UPN"
+
+                - task: AzureCLI@2
+                  displayName: 'Deploy Infrastructure'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      deployment_output=$(az deployment group create \
+                        --resource-group $(resourceGroup) \
+                        --template-file infra/main.enterprise.bicep \
+                        --parameters infra/main.$(environment).parameters.enterprise.json \
+                        --parameters currentUserObjectId=$(userObjectId) \
+                        --parameters currentUserPrincipalName=$(userUPN) \
+                        --query 'properties.outputs' \
+                        --output json)
+                      
+                      echo "##vso[task.setvariable variable=webAppName;isOutput=true]$(echo $deployment_output | jq -r '.webAppName.value')"
+                      echo "##vso[task.setvariable variable=webAppUrl;isOutput=true]$(echo $deployment_output | jq -r '.webAppUrl.value')"
+                  name: deploymentOutputs
+
+  - stage: DeployApplicationDev
+    displayName: 'Deploy Application (Dev)'
+    dependsOn: 
+      - Build
+      - DeployInfrastructureDev
+    condition: and(succeeded(), eq(dependencies.DetermineEnvironment.outputs['SetVariables.envVars.environment'], 'dev'))
+    variables:
+      webAppName: $[ stageDependencies.DeployInfrastructureDev.DeployInfra.outputs['deploymentOutputs.webAppName'] ]
+      resourceGroup: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.resourceGroup'] ]
+    jobs:
+      - deployment: DeployApp
+        displayName: 'Deploy Application'
+        pool:
+          vmImage: $(vmImageName)
+        environment: 'development'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadBuildArtifacts@0
+                  displayName: 'Download Build Artifacts'
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'single'
+                    artifactName: 'webapp-package'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                - task: AzureWebApp@1
+                  displayName: 'Deploy to Azure Web App'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    appName: $(webAppName)
+                    package: '$(System.ArtifactsDirectory)/webapp-package'
+
+                - task: AzureCLI@2
+                  displayName: 'Restart Web App'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      az webapp restart --name $(webAppName) --resource-group $(resourceGroup)
+
+  - stage: DeployApplicationProd
+    displayName: 'Deploy Application (Prod)'
+    dependsOn: 
+      - Build
+      - DeployInfrastructureProd
+    condition: and(succeeded(), eq(dependencies.DetermineEnvironment.outputs['SetVariables.envVars.environment'], 'prod'))
+    variables:
+      webAppName: $[ stageDependencies.DeployInfrastructureProd.DeployInfra.outputs['deploymentOutputs.webAppName'] ]
+      resourceGroup: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.resourceGroup'] ]
+    jobs:
+      - deployment: DeployApp
+        displayName: 'Deploy Application'
+        pool:
+          vmImage: $(vmImageName)
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadBuildArtifacts@0
+                  displayName: 'Download Build Artifacts'
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'single'
+                    artifactName: 'webapp-package'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                - task: AzureWebApp@1
+                  displayName: 'Deploy to Azure Web App'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    appName: $(webAppName)
+                    package: '$(System.ArtifactsDirectory)/webapp-package'
+
+                - task: AzureCLI@2
+                  displayName: 'Restart Web App'
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      az webapp restart --name $(webAppName) --resource-group $(resourceGroup)
+
+  - stage: PostDeploymentTests
+    displayName: 'Post-Deployment Tests'
+    dependsOn: 
+      - DetermineEnvironment
+      - DeployApplicationDev
+      - DeployApplicationProd
+    condition: or(succeeded('DeployApplicationDev'), succeeded('DeployApplicationProd'))
+    variables:
+      environment: $[ stageDependencies.DetermineEnvironment.SetVariables.outputs['envVars.environment'] ]
+      webAppUrl: $[ coalesce(stageDependencies.DeployInfrastructureDev.DeployInfra.outputs['deploymentOutputs.webAppUrl'], stageDependencies.DeployInfrastructureProd.DeployInfra.outputs['deploymentOutputs.webAppUrl']) ]
+    jobs:
+      - job: HealthCheck
+        displayName: 'Health Check'
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - script: |
+              echo "Testing application health at: $(webAppUrl)"
+              
+              # Wait for app to start up
+              sleep 30
+              
+              # Basic health check
+              response=$(curl -s -o /dev/null -w "%{http_code}" "$(webAppUrl)" || echo "000")
+              if [ "$response" != "200" ]; then
+                echo "Health check failed with status code: $response"
+                exit 1
+              else
+                echo "Application is healthy!"
+              fi
+            displayName: 'Application Health Check'
+
+          - script: |
+              # Test catalog page
+              catalog_response=$(curl -s -o /dev/null -w "%{http_code}" "$(webAppUrl)/Catalog" || echo "000")
+              if [ "$catalog_response" != "200" ]; then
+                echo "Catalog page test failed with status code: $catalog_response"
+                exit 1
+              fi
+              
+              echo "Smoke tests passed!"
+            displayName: 'Smoke Tests'

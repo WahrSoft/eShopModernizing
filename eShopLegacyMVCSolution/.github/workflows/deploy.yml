@@ -1,0 +1,258 @@
+name: Deploy eShop Legacy MVC to Azure
+
+on:
+  push:
+    branches: 
+      - main
+      - develop
+      - iteration-2
+    paths:
+      - 'src/eShopLegacyMVC/**'
+      - 'eShopLegacy.Utilities/**'
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - 'src/eShopLegacyMVC/**'
+      - 'eShopLegacy.Utilities/**'
+      - 'infra/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  AZURE_WEBAPP_PACKAGE_PATH: './src/eShopLegacyMVC'
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  determine-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      resource-group: ${{ steps.env.outputs.resource-group }}
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "${{ steps.env.outputs.environment || 'dev' }}" == "prod" ]]; then
+            echo "resource-group=rg-eshop-prod" >> $GITHUB_OUTPUT
+          else
+            echo "resource-group=rg-eshop-dev" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore eShopLegacyMVCSolution.sln
+
+      - name: Build application
+        run: dotnet build eShopLegacyMVCSolution.sln --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test eShopLegacyMVCSolution.sln --configuration Release --no-build --verbosity normal
+
+      - name: Publish application
+        run: dotnet publish ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}/eShopLegacyMVC.csproj --configuration Release --output ./publish
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-package
+          path: ./publish
+
+  validate-infrastructure:
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get current user info
+        id: user-info
+        run: |
+          USER_OBJECT_ID=$(az ad signed-in-user show --query id --output tsv)
+          USER_UPN=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+          echo "USER_OBJECT_ID=$USER_OBJECT_ID" >> $GITHUB_OUTPUT
+          echo "USER_UPN=$USER_UPN" >> $GITHUB_OUTPUT
+
+      - name: Create resource group if not exists
+        run: |
+          az group create \
+            --name ${{ needs.determine-environment.outputs.resource-group }} \
+            --location "East US 2" \
+            --tags Environment=${{ needs.determine-environment.outputs.environment }} Purpose="eShop Legacy MVC"
+
+      - name: Validate Bicep template
+        run: |
+          az deployment group validate \
+            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+            --template-file infra/main.enterprise.bicep \
+            --parameters infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json \
+            --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+            --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }}
+
+      - name: Preview infrastructure changes
+        run: |
+          az deployment group what-if \
+            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+            --template-file infra/main.enterprise.bicep \
+            --parameters infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json \
+            --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+            --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }}
+
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    needs: [determine-environment, validate-infrastructure]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    outputs:
+      webapp-name: ${{ steps.deploy.outputs.webAppName }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get current user info
+        id: user-info
+        run: |
+          USER_OBJECT_ID=$(az ad signed-in-user show --query id --output tsv)
+          USER_UPN=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+          echo "USER_OBJECT_ID=$USER_OBJECT_ID" >> $GITHUB_OUTPUT
+          echo "USER_UPN=$USER_UPN" >> $GITHUB_OUTPUT
+
+      - name: Deploy infrastructure
+        id: deploy
+        run: |
+          deployment_output=$(az deployment group create \
+            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+            --template-file infra/main.enterprise.bicep \
+            --parameters infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json \
+            --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+            --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }} \
+            --query 'properties.outputs' \
+            --output json)
+          
+          echo "webAppName=$(echo $deployment_output | jq -r '.webAppName.value')" >> $GITHUB_OUTPUT
+          echo "webAppUrl=$(echo $deployment_output | jq -r '.webAppUrl.value')" >> $GITHUB_OUTPUT
+          echo "keyVaultName=$(echo $deployment_output | jq -r '.keyVaultName.value')" >> $GITHUB_OUTPUT
+
+  deploy-application:
+    runs-on: ubuntu-latest
+    needs: [determine-environment, build, deploy-infrastructure]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: webapp-package
+          path: ./publish
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ needs.deploy-infrastructure.outputs.webapp-name }}
+          package: ./publish
+
+      - name: Restart Web App
+        run: |
+          az webapp restart \
+            --name ${{ needs.deploy-infrastructure.outputs.webapp-name }} \
+            --resource-group ${{ needs.determine-environment.outputs.resource-group }}
+
+  post-deployment-tests:
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-infrastructure, deploy-application]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Health Check
+        run: |
+          WEBAPP_URL="${{ needs.deploy-infrastructure.outputs.webAppUrl }}"
+          echo "Testing application health at: $WEBAPP_URL"
+          
+          # Wait for app to start up
+          sleep 30
+          
+          # Basic health check
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL" || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "Health check failed with status code: $response"
+            exit 1
+          else
+            echo "Application is healthy!"
+          fi
+
+      - name: Run smoke tests
+        run: |
+          WEBAPP_URL="${{ needs.deploy-infrastructure.outputs.webAppUrl }}"
+          
+          # Test catalog page
+          catalog_response=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL/Catalog" || echo "000")
+          if [ "$catalog_response" != "200" ]; then
+            echo "Catalog page test failed with status code: $catalog_response"
+            exit 1
+          fi
+          
+          echo "Smoke tests passed!"
+
+  cleanup-on-failure:
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-infrastructure, deploy-application, post-deployment-tests]
+    if: always() && (needs.deploy-infrastructure.result == 'failure' || needs.deploy-application.result == 'failure' || needs.post-deployment-tests.result == 'failure')
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Notify of deployment failure
+        run: |
+          echo "Deployment failed. Consider rolling back or investigating the issue."
+          echo "Resource Group: ${{ needs.determine-environment.outputs.resource-group }}"
+          echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
