@@ -32,4 +32,9 @@ app.UseSystemWebAdapters();
 app.MapControllers()
     .RequireSystemWebAdapterSession();
 
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Catalog}/{action=Index}/{id?}")
+    .RequireSystemWebAdapterSession();
+
 app.Run();
