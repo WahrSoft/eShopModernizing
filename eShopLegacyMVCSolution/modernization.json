@@ -1,0 +1,126 @@
+{
+  "applicationAnalysis": {
+    "applicationType": "ASP.NET MVC Web Application",
+    "currentFramework": ".NET Framework 4.7.2",
+    "modernizationCategory": "Containerization and Cloud Migration Candidate",
+    "complexity": "Medium",
+    "migrationStrategy": "Lift and Shift with Modernization"
+  },
+  "technologiesUsed": {
+    "entityFramework": {
+      "present": true,
+      "version": "6.2.0",
+      "files": [
+        "src/eShopLegacyMVC/Models/CatalogDBContext.cs",
+        "src/eShopLegacyMVC/Models/Infrastructure/CatalogDBInitializer.cs",
+        "src/eShopLegacyMVC/Web.config"
+      ],
+      "notes": "Uses Entity Framework 6.x with Code First approach, SQL Server LocalDB"
+    },
+    "remoting": {
+      "present": true,
+      "files": [
+        "src/eShopLegacyMVC/Controllers/WebApi/BrandsController.cs"
+      ],
+      "notes": "System.Runtime.Remoting.Messaging import found - minimal usage"
+    },
+    "asmxWebServices": {
+      "present": false,
+      "files": [],
+      "notes": "No ASMX web services found"
+    },
+    "wcf": {
+      "present": false,
+      "files": [],
+      "notes": "No WCF services found"
+    },
+    "webForms": {
+      "present": false,
+      "files": [],
+      "notes": "No Web Forms pages found - pure MVC application"
+    },
+    "windowsWorkflow": {
+      "present": false,
+      "files": [],
+      "notes": "No Windows Workflow Foundation usage found"
+    }
+  },
+  "externalDependencies": {
+    "databases": [
+      {
+        "type": "SQL Server",
+        "connectionString": "Data Source=(localdb)\\MSSQLLocalDB; Initial Catalog=Microsoft.eShopOnContainers.Services.CatalogDb; Integrated Security=True; MultipleActiveResultSets=True;",
+        "usage": "Primary data store for catalog items, brands, and types",
+        "migrationPath": "Azure SQL Database or SQL Server in container"
+      }
+    ],
+    "externalServices": [
+      {
+        "type": "Application Insights",
+        "usage": "Telemetry and monitoring",
+        "configFiles": [
+          "src/eShopLegacyMVC/ApplicationInsights.config",
+          "src/eShopLegacyMVC/Web.config"
+        ]
+      }
+    ],
+    "fileSystem": [
+      {
+        "path": "Pics folder",
+        "usage": "Static product images",
+        "migrationPath": "Azure Blob Storage or containerized file system"
+      },
+      {
+        "path": "Setup folder",
+        "usage": "CSV files for data seeding",
+        "migrationPath": "Configuration or init containers"
+      }
+    ]
+  },
+  "modernizationRecommendations": {
+    "immediate": [
+      "Containerize the application using Docker",
+      "Migrate Entity Framework 6.x to Entity Framework Core",
+      "Update to .NET 8 or latest LTS version",
+      "Replace BinaryFormatter usage (security risk)"
+    ],
+    "cloudMigration": [
+      "Deploy to Azure App Service or Azure Container Apps",
+      "Migrate SQL Server LocalDB to Azure SQL Database",
+      "Move static files to Azure Blob Storage",
+      "Implement Azure Application Insights for monitoring"
+    ],
+    "architecturalImprovements": [
+      "Consider microservices architecture (separate catalog service)",
+      "Implement API versioning",
+      "Add comprehensive logging and health checks",
+      "Implement caching strategies (Redis)",
+      "Add authentication/authorization (Azure AD B2C)"
+    ]
+  },
+  "riskAssessment": {
+    "high": [
+      "BinaryFormatter usage in eShopLegacy.Utilities - security vulnerability",
+      "Entity Framework 6.x - requires significant changes for EF Core migration"
+    ],
+    "medium": [
+      "System.Runtime.Remoting.Messaging dependency",
+      "File system dependencies for images and setup data",
+      "LocalDB dependency"
+    ],
+    "low": [
+      "Application Insights integration",
+      "Autofac dependency injection container"
+    ]
+  },
+  "migrationEffort": {
+    "estimatedTimeframe": "4-6 weeks",
+    "requiredSkills": [
+      ".NET Core/5+ migration experience",
+      "Entity Framework Core",
+      "Docker containerization",
+      "Azure cloud services",
+      "Database migration"
+    ]
+  }
+}
