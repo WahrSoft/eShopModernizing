@@ -1,8 +1,11 @@
 ﻿using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Options;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Services;
+using eShopLegacyMVC.Configuration;
 using log4net;
 using Microsoft.AspNetCore.Http;
 
@@ -13,10 +16,31 @@ namespace eShopLegacyMVC.Controllers
         private static readonly ILog _log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private ICatalogService service;
+        private readonly IDistributedCache _distributedCache;
+        private readonly CacheSettings _cacheSettings;
 
-        public CatalogController(ICatalogService service)
+        public CatalogController(ICatalogService service, IDistributedCache distributedCache, IOptions<CacheSettings> cacheSettings)
         {
             this.service = service;
+            _distributedCache = distributedCache;
+            _cacheSettings = cacheSettings.Value;
+        }
+
+        // GET: Catalog/CacheStatus - Test endpoint to verify cache configuration
+        public IActionResult CacheStatus()
+        {
+            var cacheInfo = new
+            {
+                CacheType = _cacheSettings.UseRedis ? "Redis" : "In-Memory",
+                InstanceName = _cacheSettings.InstanceName,
+                SessionTimeoutMinutes = _cacheSettings.SessionTimeoutMinutes,
+                CacheImplementation = _distributedCache.GetType().Name,
+                SessionId = HttpContext.Session.Id,
+                MachineName = HttpContext.Session.GetString("MachineName"),
+                SessionStartTime = HttpContext.Session.GetString("SessionStartTime")
+            };
+
+            return Json(cacheInfo);
         }
 
         // GET /[?pageSize=3&pageIndex=10]

@@ -2,11 +2,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.Modules;
+using eShopLegacyMVC.Configuration;
 using log4net;
 using System.Data.Entity;
 using System.Reflection;
@@ -15,6 +17,11 @@ using Microsoft.AspNetCore.Http;
 using System;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure cache settings
+builder.Services.Configure<CacheSettings>(builder.Configuration.GetSection("CacheSettings"));
+var cacheSettings = new CacheSettings();
+builder.Configuration.GetSection("CacheSettings").Bind(cacheSettings);
 
 // Add Application Insights telemetry
 builder.Services.AddApplicationInsightsTelemetry(options =>
@@ -28,13 +35,40 @@ builder.Services.AddApplicationInsightsTelemetry(options =>
     options.EnableRequestTrackingTelemetryModule = true;
 });
 
+// Configure distributed cache based on environment
+if (cacheSettings.UseRedis)
+{
+    var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+    if (!string.IsNullOrEmpty(redisConnectionString))
+    {
+        builder.Services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = redisConnectionString;
+            options.InstanceName = cacheSettings.InstanceName;
+        });
+    }
+    else
+    {
+        // Fallback to memory cache if Redis connection string is not configured
+        builder.Services.AddDistributedMemoryCache();
+        Console.WriteLine("WARNING: Redis is enabled but connection string is missing. Falling back to in-memory cache.");
+    }
+}
+else
+{
+    // Use in-memory cache for local development
+    builder.Services.AddDistributedMemoryCache();
+}
+
 // Configure session services
-builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.IdleTimeout = TimeSpan.FromMinutes(cacheSettings.SessionTimeoutMinutes);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() 
+        ? CookieSecurePolicy.SameAsRequest 
+        : CookieSecurePolicy.Always;
 });
 
 // Configure Autofac
@@ -59,6 +93,17 @@ builder.Services.AddSystemWebAdapters()
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
+
+// Log cache configuration on startup
+var appLogger = app.Services.GetService<ILogger<Program>>();
+if (cacheSettings.UseRedis)
+{
+    appLogger?.LogInformation("Application configured to use Redis distributed cache");
+}
+else
+{
+    appLogger?.LogInformation("Application configured to use in-memory distributed cache");
+}
 
 // Configure database
 using (var scope = app.Services.CreateScope())
