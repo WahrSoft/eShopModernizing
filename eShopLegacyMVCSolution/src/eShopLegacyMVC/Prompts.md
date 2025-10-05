@@ -51,6 +51,8 @@ build and verify warnings and fix warnings   (had to revert the Html Partial fix
 
 
 
+New Agent Chat
 
+I need to create an Enterprise grade Bicep solution for Azure deployment using best practices, if the application supports, create a Key Vault to put secrets in that are found in appSettings.  If the app uses SQL, use a SQL connection string that uses a configured managed identity for the web app service.  Use the current user account for the Entra Admin for SQL.  Configure a virtual network and use private endpoints to talk to all dependent services. 
 
 
