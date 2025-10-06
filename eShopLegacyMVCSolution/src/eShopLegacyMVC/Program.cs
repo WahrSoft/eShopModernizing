@@ -10,14 +10,13 @@ using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.Modules;
 using eShopLegacyMVC.Configuration;
 using log4net;
-using System.Data.Entity;
+using Microsoft.EntityFrameworkCore;
 using System.Reflection;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
-using System.Data.Entity.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,16 +25,9 @@ builder.Services.Configure<CacheSettings>(builder.Configuration.GetSection("Cach
 var cacheSettings = new CacheSettings();
 builder.Configuration.GetSection("CacheSettings").Bind(cacheSettings);
 
-
-try
-{
-    DbProviderFactories.RegisterFactory(MicrosoftSqlProviderServices.ProviderInvariantName,
-        SqlClientFactory.Instance);
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"Error registering SQL Server provider factory: {ex.Message}");
-}
+// Add Entity Framework Core DbContext
+builder.Services.AddDbContext<CatalogDBContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("CatalogDBContext")));
 
 // Add Application Insights telemetry
 builder.Services.AddApplicationInsightsTelemetry(options =>
@@ -119,15 +111,30 @@ else
     appLogger?.LogInformation("Application configured to use in-memory distributed cache");
 }
 
-// Configure database
+// Configure database initialization for EF Core
 using (var scope = app.Services.CreateScope())
 {
-    var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    var services = scope.ServiceProvider;
+    var configuration = services.GetRequiredService<IConfiguration>();
     var mockData = bool.Parse(configuration["UseMockData"] ?? "false");
+    
     if (!mockData)
     {
-        var dbInitializer = scope.ServiceProvider.GetRequiredService<CatalogDBInitializer>();
-        Database.SetInitializer<CatalogDBContext>(dbInitializer);
+        try
+        {
+            var catalogContext = services.GetRequiredService<CatalogDBContext>();
+            
+            // Ensure the database is created and apply any pending migrations
+            catalogContext.Database.EnsureCreated();
+            
+            // Run database seeding if needed
+            var catalogInitializer = services.GetRequiredService<CatalogDBInitializer>();
+            catalogInitializer.Seed(catalogContext);
+        }
+        catch (Exception ex)
+        {
+            appLogger?.LogError(ex, "An error occurred while seeding the database.");
+        }
     }
 }
 

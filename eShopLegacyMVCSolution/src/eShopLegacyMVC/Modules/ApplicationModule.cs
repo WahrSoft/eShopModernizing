@@ -3,6 +3,7 @@ using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 
 namespace eShopLegacyMVC.Modules
 {
@@ -29,14 +30,7 @@ namespace eShopLegacyMVC.Modules
                     .InstancePerLifetimeScope();
             }
 
-            builder.Register(c =>
-            {
-                var configuration = c.Resolve<IConfiguration>();
-                var connectionString = configuration.GetConnectionString("CatalogDBContext");
-                return new CatalogDBContext(connectionString);
-            })
-            .InstancePerLifetimeScope();
-
+            // Register CatalogDBInitializer and CatalogItemHiLoGenerator for database seeding
             builder.RegisterType<CatalogDBInitializer>()
                 .InstancePerLifetimeScope();
 
