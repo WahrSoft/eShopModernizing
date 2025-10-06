@@ -38,10 +38,8 @@ resource sqlAdminPassword 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
     retentionInterval: 'PT1H'
     scriptContent: '''
       $password = -join ((33..126) | Get-Random -Count 32 | ForEach-Object {[char]$_})
-      $output = @{
-        password = $password
-      }
-      Write-Output $output | ConvertTo-Json
+      $DeploymentScriptOutputs = @{}
+      $DeploymentScriptOutputs['password'] = $password
     '''
   }
 }
@@ -51,24 +49,32 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   name: sqlServerName
   location: location
   properties: {
-    administratorLogin: sqlAdminUsername
-    administratorLoginPassword: sqlAdminPassword.properties.outputs.password
     version: '12.0'
-    // Disable public access
-    publicNetworkAccess: 'Disabled'
-    // Enable Microsoft Entra-only authentication
+    // Enable public access for firewall rules, but limit access via firewall
+    publicNetworkAccess: 'Enabled'
+    // Configure Microsoft Entra ID administrators
     administrators: {
       administratorType: 'ActiveDirectory'
       principalType: 'User'
-      login: currentUserPrincipalName
-      sid: currentUserObjectId
-      tenantId: tenant().tenantId
+      login: 'andywahrenberger_hotmail.com#EXT#@wahrenberger.onmicrosoft.com'
+      sid: '1bc68466-61e0-4b35-9f61-370282a0f277'
+      tenantId: '63bd38f1-34c1-494b-b15d-55e02d51586b'
       azureADOnlyAuthentication: true
     }
   }
   tags: {
     Environment: environmentName
     Purpose: 'Application Database'
+  }
+}
+
+// Firewall rule to allow Azure services (needed for App Service and managed identity)
+resource sqlFirewallRule 'Microsoft.Sql/servers/firewallRules@2023-05-01-preview' = {
+  parent: sqlServer
+  name: 'AllowAzureServices'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
   }
 }
 
@@ -85,13 +91,29 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-05-01-preview' = {
     collation: 'SQL_Latin1_General_CP1_CI_AS'
     maxSizeBytes: environmentName == 'prod' ? 268435456000 : 2147483648 // 250GB for prod, 2GB for dev/test
     catalogCollation: 'SQL_Latin1_General_CP1_CI_AS'
-    zoneRedundant: environmentName == 'prod' ? true : false
+    // Remove zone redundancy to avoid compatibility issues
+    zoneRedundant: false
     readScale: 'Disabled'
     requestedBackupStorageRedundancy: environmentName == 'prod' ? 'Geo' : 'Local'
   }
   tags: {
     Environment: environmentName
     Purpose: 'Catalog Database'
+  }
+  dependsOn: [
+    sqlFirewallRule
+  ]
+}
+
+// Store SQL connection string in Key Vault for application use
+resource sqlConnectionString 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  name: '${keyVaultName}/sql-connection-string'
+  properties: {
+    value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabase.name};Persist Security Info=False;User ID=${sqlAdminUsername};Password=${sqlAdminPassword.properties.outputs.password};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    contentType: 'text/plain'
+    attributes: {
+      enabled: true
+    }
   }
 }
 
@@ -154,16 +176,6 @@ resource sqlPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZo
         }
       }
     ]
-  }
-}
-
-// Firewall rule to allow Azure services (needed for managed identity)
-resource sqlFirewallRule 'Microsoft.Sql/servers/firewallRules@2023-05-01-preview' = {
-  parent: sqlServer
-  name: 'AllowAzureServices'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
   }
 }
 

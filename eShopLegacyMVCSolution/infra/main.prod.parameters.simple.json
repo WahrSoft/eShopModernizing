@@ -6,7 +6,7 @@
       "value": "prod"
     },
     "location": {
-      "value": "North Central US"
+      "value": "East US 2"
     },
     "baseName": {
       "value": "eshop"
@@ -15,10 +15,7 @@
       "value": "sqladmin"
     },
     "currentUserObjectId": {
-      "value": "1bc68466-61e0-4b35-9f61-370282a0f277"
-    },
-    "currentUserPrincipalName": {
-      "value": "andywahrenberger_hotmail.com#EXT#@wahrenberger.onmicrosoft.com"
+      "value": "REPLACE_WITH_YOUR_OBJECT_ID"
     }
   }
 }

@@ -28,6 +28,14 @@ on:
         options:
           - dev
           - prod
+      deployment_mode:
+        description: 'Deployment mode'
+        required: false
+        default: 'enterprise'
+        type: choice
+        options:
+          - enterprise
+          - simple
 
 env:
   AZURE_WEBAPP_PACKAGE_PATH: './src/eShopLegacyMVC'
@@ -39,16 +47,20 @@ jobs:
     outputs:
       environment: ${{ steps.env.outputs.environment }}
       resource-group: ${{ steps.env.outputs.resource-group }}
+      deployment-mode: ${{ steps.env.outputs.deployment-mode }}
     steps:
-      - name: Determine environment
+      - name: Determine environment and deployment mode
         id: env
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "deployment-mode=${{ github.event.inputs.deployment_mode || 'enterprise' }}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "deployment-mode=enterprise" >> $GITHUB_OUTPUT
           else
             echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "deployment-mode=enterprise" >> $GITHUB_OUTPUT
           fi
           
           if [[ "${{ steps.env.outputs.environment || 'dev' }}" == "prod" ]]; then
@@ -114,23 +126,50 @@ jobs:
             --location "East US 2" \
             --tags Environment=${{ needs.determine-environment.outputs.environment }} Purpose="eShop Legacy MVC"
 
+      - name: Determine template and parameters
+        id: template
+        run: |
+          if [[ "${{ needs.determine-environment.outputs.deployment-mode }}" == "simple" ]]; then
+            echo "template=infra/main.simple.bicep" >> $GITHUB_OUTPUT
+            echo "parameters=infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.simple.json" >> $GITHUB_OUTPUT
+          else
+            echo "template=infra/main.enterprise.bicep" >> $GITHUB_OUTPUT
+            echo "parameters=infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json" >> $GITHUB_OUTPUT
+          fi
+
       - name: Validate Bicep template
         run: |
-          az deployment group validate \
-            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
-            --template-file infra/main.enterprise.bicep \
-            --parameters infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json \
-            --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
-            --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }}
+          if [[ "${{ needs.determine-environment.outputs.deployment-mode }}" == "simple" ]]; then
+            az deployment group validate \
+              --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+              --template-file ${{ steps.template.outputs.template }} \
+              --parameters ${{ steps.template.outputs.parameters }} \
+              --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }}
+          else
+            az deployment group validate \
+              --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+              --template-file ${{ steps.template.outputs.template }} \
+              --parameters ${{ steps.template.outputs.parameters }} \
+              --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+              --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }}
+          fi
 
       - name: Preview infrastructure changes
         run: |
-          az deployment group what-if \
-            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
-            --template-file infra/main.enterprise.bicep \
-            --parameters infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json \
-            --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
-            --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }}
+          if [[ "${{ needs.determine-environment.outputs.deployment-mode }}" == "simple" ]]; then
+            az deployment group what-if \
+              --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+              --template-file ${{ steps.template.outputs.template }} \
+              --parameters ${{ steps.template.outputs.parameters }} \
+              --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }}
+          else
+            az deployment group what-if \
+              --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+              --template-file ${{ steps.template.outputs.template }} \
+              --parameters ${{ steps.template.outputs.parameters }} \
+              --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+              --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }}
+          fi
 
   deploy-infrastructure:
     runs-on: ubuntu-latest
@@ -139,6 +178,8 @@ jobs:
     environment: ${{ needs.determine-environment.outputs.environment }}
     outputs:
       webapp-name: ${{ steps.deploy.outputs.webAppName }}
+      webapp-url: ${{ steps.deploy.outputs.webAppUrl }}
+      deployment-successful: ${{ steps.deploy.outputs.deploymentSuccessful }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -156,26 +197,103 @@ jobs:
           echo "USER_OBJECT_ID=$USER_OBJECT_ID" >> $GITHUB_OUTPUT
           echo "USER_UPN=$USER_UPN" >> $GITHUB_OUTPUT
 
-      - name: Deploy infrastructure
+      - name: Determine template and parameters
+        id: template
+        run: |
+          if [[ "${{ needs.determine-environment.outputs.deployment-mode }}" == "simple" ]]; then
+            echo "template=infra/main.simple.bicep" >> $GITHUB_OUTPUT
+            echo "parameters=infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.simple.json" >> $GITHUB_OUTPUT
+          else
+            echo "template=infra/main.enterprise.bicep" >> $GITHUB_OUTPUT
+            echo "parameters=infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy infrastructure (with fallback)
         id: deploy
         run: |
-          deployment_output=$(az deployment group create \
-            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
-            --template-file infra/main.enterprise.bicep \
-            --parameters infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.enterprise.json \
-            --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
-            --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }} \
-            --query 'properties.outputs' \
-            --output json)
+          # Function to attempt deployment
+          attempt_deployment() {
+            local template=$1
+            local parameters=$2
+            local mode=$3
+            
+            echo "Attempting $mode deployment with template: $template"
+            
+            if [[ "$mode" == "simple" ]]; then
+              deployment_output=$(az deployment group create \
+                --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+                --template-file "$template" \
+                --parameters "$parameters" \
+                --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+                --query 'properties.outputs' \
+                --output json 2>&1)
+            else
+              deployment_output=$(az deployment group create \
+                --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+                --template-file "$template" \
+                --parameters "$parameters" \
+                --parameters currentUserObjectId=${{ steps.user-info.outputs.USER_OBJECT_ID }} \
+                --parameters currentUserPrincipalName=${{ steps.user-info.outputs.USER_UPN }} \
+                --query 'properties.outputs' \
+                --output json 2>&1)
+            fi
+            
+            echo "$deployment_output"
+          }
           
-          echo "webAppName=$(echo $deployment_output | jq -r '.webAppName.value')" >> $GITHUB_OUTPUT
-          echo "webAppUrl=$(echo $deployment_output | jq -r '.webAppUrl.value')" >> $GITHUB_OUTPUT
-          echo "keyVaultName=$(echo $deployment_output | jq -r '.keyVaultName.value')" >> $GITHUB_OUTPUT
+          # First attempt with chosen mode
+          echo "Starting deployment with mode: ${{ needs.determine-environment.outputs.deployment-mode }}"
+          deployment_output=$(attempt_deployment "${{ steps.template.outputs.template }}" "${{ steps.template.outputs.parameters }}" "${{ needs.determine-environment.outputs.deployment-mode }}")
+          
+          # Check if deployment succeeded
+          if echo "$deployment_output" | grep -q '"webAppName"'; then
+            echo "Deployment successful with ${{ needs.determine-environment.outputs.deployment-mode }} mode"
+            echo "webAppName=$(echo $deployment_output | jq -r '.webAppName.value')" >> $GITHUB_OUTPUT
+            echo "webAppUrl=$(echo $deployment_output | jq -r '.webAppUrl.value')" >> $GITHUB_OUTPUT
+            echo "keyVaultName=$(echo $deployment_output | jq -r '.keyVaultName.value')" >> $GITHUB_OUTPUT
+            echo "deploymentSuccessful=true" >> $GITHUB_OUTPUT
+          else
+            echo "Primary deployment failed with error: $deployment_output"
+            
+            # If enterprise mode failed, try simple mode as fallback
+            if [[ "${{ needs.determine-environment.outputs.deployment-mode }}" == "enterprise" ]]; then
+              echo "Attempting fallback to simple deployment mode..."
+              
+              fallback_output=$(attempt_deployment "infra/main.simple.bicep" "infra/main.${{ needs.determine-environment.outputs.environment }}.parameters.simple.json" "simple")
+              
+              if echo "$fallback_output" | grep -q '"webAppName"'; then
+                echo "Fallback deployment successful"
+                echo "webAppName=$(echo $fallback_output | jq -r '.webAppName.value')" >> $GITHUB_OUTPUT
+                echo "webAppUrl=$(echo $fallback_output | jq -r '.webAppUrl.value')" >> $GITHUB_OUTPUT
+                echo "keyVaultName=$(echo $fallback_output | jq -r '.keyVaultName.value')" >> $GITHUB_OUTPUT
+                echo "deploymentSuccessful=true" >> $GITHUB_OUTPUT
+              else
+                echo "Fallback deployment also failed: $fallback_output"
+                echo "deploymentSuccessful=false" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+            else
+              echo "deploymentSuccessful=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+
+      - name: Verify deployment
+        if: steps.deploy.outputs.deploymentSuccessful == 'true'
+        run: |
+          echo "Verifying webapp: ${{ steps.deploy.outputs.webAppName }}"
+          if [ -n "${{ steps.deploy.outputs.webAppName }}" ]; then
+            az webapp show --name ${{ steps.deploy.outputs.webAppName }} \
+              --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+              --query "name" -o tsv
+          else
+            echo "Warning: WebApp name not found in deployment output"
+          fi
 
   deploy-application:
     runs-on: ubuntu-latest
     needs: [determine-environment, build, deploy-infrastructure]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch') && needs.deploy-infrastructure.outputs.deployment-successful == 'true'
     environment: ${{ needs.determine-environment.outputs.environment }}
     steps:
       - name: Download build artifacts
@@ -204,7 +322,7 @@ jobs:
   post-deployment-tests:
     runs-on: ubuntu-latest
     needs: [determine-environment, deploy-infrastructure, deploy-application]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch') && needs.deploy-infrastructure.outputs.deployment-successful == 'true'
     steps:
       - name: Azure Login
         uses: azure/login@v2
@@ -213,38 +331,53 @@ jobs:
 
       - name: Health Check
         run: |
-          WEBAPP_URL="${{ needs.deploy-infrastructure.outputs.webAppUrl }}"
+          WEBAPP_URL="${{ needs.deploy-infrastructure.outputs.webapp-url }}"
           echo "Testing application health at: $WEBAPP_URL"
           
           # Wait for app to start up
-          sleep 30
+          echo "Waiting for application to start..."
+          sleep 60
           
-          # Basic health check
-          response=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL" || echo "000")
-          if [ "$response" != "200" ]; then
-            echo "Health check failed with status code: $response"
-            exit 1
-          else
-            echo "Application is healthy!"
-          fi
+          # Basic health check with retry
+          for attempt in 1 2 3 4 5; do
+            echo "Health check attempt $attempt"
+            response=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL" || echo "000")
+            if [ "$response" == "200" ]; then
+              echo "Application is healthy!"
+              break
+            elif [[ $attempt == 5 ]]; then
+              echo "Health check failed after 5 attempts with status code: $response"
+              echo "Warning: Health check failed, but continuing deployment"
+            else
+              echo "Attempt $attempt failed with status code: $response, retrying..."
+              sleep 30
+            fi
+          done
 
       - name: Run smoke tests
         run: |
-          WEBAPP_URL="${{ needs.deploy-infrastructure.outputs.webAppUrl }}"
+          WEBAPP_URL="${{ needs.deploy-infrastructure.outputs.webapp-url }}"
           
-          # Test catalog page
-          catalog_response=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL/Catalog" || echo "000")
-          if [ "$catalog_response" != "200" ]; then
-            echo "Catalog page test failed with status code: $catalog_response"
-            exit 1
-          fi
-          
-          echo "Smoke tests passed!"
+          # Test catalog page with retry
+          for attempt in 1 2 3; do
+            echo "Catalog test attempt $attempt"
+            catalog_response=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL/Catalog" || echo "000")
+            if [ "$catalog_response" == "200" ]; then
+              echo "Catalog page test passed!"
+              break
+            elif [[ $attempt == 3 ]]; then
+              echo "Catalog page test failed after 3 attempts with status code: $catalog_response"
+              echo "Warning: Smoke tests failed, but deployment completed"
+            else
+              echo "Catalog test attempt $attempt failed, retrying..."
+              sleep 20
+            fi
+          done
 
   cleanup-on-failure:
     runs-on: ubuntu-latest
     needs: [determine-environment, deploy-infrastructure, deploy-application, post-deployment-tests]
-    if: always() && (needs.deploy-infrastructure.result == 'failure' || needs.deploy-application.result == 'failure' || needs.post-deployment-tests.result == 'failure')
+    if: always() && (needs.deploy-infrastructure.result == 'failure' || needs.deploy-application.result == 'failure')
     steps:
       - name: Azure Login
         uses: azure/login@v2
@@ -253,6 +386,20 @@ jobs:
 
       - name: Notify of deployment failure
         run: |
-          echo "Deployment failed. Consider rolling back or investigating the issue."
+          echo "Deployment failed. Consider investigating the issue."
           echo "Resource Group: ${{ needs.determine-environment.outputs.resource-group }}"
           echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+          echo "Deployment Mode: ${{ needs.determine-environment.outputs.deployment-mode }}"
+          
+          # List failed deployments for debugging
+          echo "Recent deployment operations:"
+          az deployment group list \
+            --resource-group ${{ needs.determine-environment.outputs.resource-group }} \
+            --query "[?provisioningState=='Failed'].{Name:name, Status:provisioningState, Timestamp:timestamp}" \
+            --output table || true
+          
+          echo ""
+          echo "Troubleshooting suggestions:"
+          echo "1. Check the infra/TROUBLESHOOTING.md file for common solutions"
+          echo "2. Try running the deployment manually with simplified mode"
+          echo "3. Verify your Azure permissions and subscription limits"

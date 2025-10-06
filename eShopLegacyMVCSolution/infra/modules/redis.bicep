@@ -28,20 +28,18 @@ resource redis 'Microsoft.Cache/redis@2023-08-01' = {
       family: environmentName == 'prod' ? 'P' : 'C'
       capacity: environmentName == 'prod' ? 1 : 1
     }
-    // Disable public access
-    publicNetworkAccess: 'Disabled'
-    // Enable authentication
+    // Enable public access initially to avoid private endpoint conflicts
+    publicNetworkAccess: 'Enabled'
+    // Enable authentication with simplified configuration
     redisConfiguration: {
-      'aof-backup-enabled': environmentName == 'prod' ? 'true' : 'false'
-      'rdb-backup-enabled': environmentName == 'prod' ? 'true' : 'false'
-      'rdb-backup-frequency': environmentName == 'prod' ? '60' : '1440'
-      'rdb-backup-max-snapshot-count': '1'
+      // Only set basic configuration to avoid invalid parameter errors
+      'maxmemory-policy': 'allkeys-lru'
     }
     // SSL enforcement
     minimumTlsVersion: '1.2'
   }
-  // Zone redundancy is configured at the resource level for Premium SKU
-  zones: environmentName == 'prod' ? ['1', '2'] : []
+  // Remove zones for Standard tier as it doesn't support it
+  zones: (environmentName == 'prod' && location == 'East US 2') ? ['1', '2'] : []
   tags: {
     Environment: environmentName
     Purpose: 'Application Cache'

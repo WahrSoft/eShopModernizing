@@ -33,15 +33,15 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: appServicePlanName
   location: location
   sku: {
-    name: environmentName == 'prod' ? 'P1v3' : 'S1'
-    tier: environmentName == 'prod' ? 'PremiumV3' : 'Standard'
-    size: environmentName == 'prod' ? 'P1v3' : 'S1'
-    family: environmentName == 'prod' ? 'Pv3' : 'S'
-    capacity: environmentName == 'prod' ? 2 : 1
+    name: environmentName == 'prod' ? 'S1' : 'S1'
+    tier: environmentName == 'prod' ? 'Standard' : 'Standard'
+    size: environmentName == 'prod' ? 'S1' : 'S1'
+    family: environmentName == 'prod' ? 'S' : 'S'
+    capacity: environmentName == 'prod' ? 1 : 1
   }
   properties: {
     reserved: false // Windows
-    zoneRedundant: environmentName == 'prod' ? true : false
+    zoneRedundant: environmentName == 'prod' ? false : false
   }
   tags: {
     Environment: environmentName
@@ -59,7 +59,7 @@ resource webApp 'Microsoft.Web/sites@2023-01-01' = {
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
-    redundancyMode: environmentName == 'prod' ? 'ActiveActive' : 'None'
+    redundancyMode: environmentName == 'prod' ? 'None' : 'None'
     siteConfig: {
       // .NET 8 configuration
       netFrameworkVersion: 'v8.0'
@@ -242,11 +242,11 @@ resource webAppConfig 'Microsoft.Web/sites/config@2023-01-01' = {
   parent: webApp
   name: 'web'
   properties: {
-    numberOfWorkers: environmentName == 'prod' ? 2 : 1
+    numberOfWorkers: environmentName == 'prod' ? 1 : 1
     requestTracingEnabled: true
     requestTracingExpirationTime: '9999-12-31T23:59:00Z'
     remoteDebuggingEnabled: false
-    remoteDebuggingVersion: 'VS2019'
+    remoteDebuggingVersion: 'VS2022'
     httpLoggingEnabled: true
     acrUseManagedIdentityCreds: false
     acrUserManagedIdentityID: ''

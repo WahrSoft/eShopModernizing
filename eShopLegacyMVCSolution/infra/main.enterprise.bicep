@@ -21,7 +21,7 @@ param currentUserObjectId string
 param currentUserPrincipalName string
 
 // Generate unique suffix
-var uniqueSuffix = substring(uniqueString(resourceGroup().id), 0, 6)
+var uniqueSuffix = substring(uniqueString(resourceGroup().id), 0, 5)
 var resourceNamePrefix = '${baseName}-${environmentName}-${uniqueSuffix}'
 
 // Network module
