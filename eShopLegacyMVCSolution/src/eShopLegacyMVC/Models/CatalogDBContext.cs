@@ -32,6 +32,7 @@ namespace eShopLegacyMVC.Models
             builder.HasKey(ci => ci.Id);
 
             builder.Property(ci => ci.Id)
+               .ValueGeneratedNever()
                .IsRequired();
 
             builder.Property(cb => cb.Type)
@@ -46,6 +47,7 @@ namespace eShopLegacyMVC.Models
             builder.HasKey(ci => ci.Id);
 
             builder.Property(ci => ci.Id)
+               .ValueGeneratedNever()
                .IsRequired();
 
             builder.Property(cb => cb.Brand)
