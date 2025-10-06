@@ -4,6 +4,7 @@ using System.Linq;
 using eShopLegacyMVC.Models;
 using eShopLegacyMVC.Models.Infrastructure;
 using eShopLegacyMVC.ViewModel;
+using System.Threading.Tasks;
 
 namespace eShopLegacyMVC.Services
 {
@@ -30,9 +31,39 @@ namespace eShopLegacyMVC.Services
                 pageIndex, pageSize, items.Count, itemsOnPage);
         }
 
+        public async Task<PaginatedItemsViewModel<CatalogItem>> GetCatalogItemsPaginatedAsync(int pageSize = 10, int pageIndex = 0)
+        {
+            return await Task.FromResult(GetCatalogItemsPaginated(pageSize, pageIndex));
+        }
+
         public CatalogItem FindCatalogItem(int id)
         {
             return catalogItems.FirstOrDefault(x => x.Id == id);
+        }
+
+        public async Task<CatalogItem> FindCatalogItemAsync(int id)
+        {
+            return await Task.FromResult(FindCatalogItem(id));
+        }
+
+        public CatalogBrand FindCatalogBrand(int id)
+        {
+            return PreconfiguredData.GetPreconfiguredCatalogBrands().FirstOrDefault(x => x.Id == id);
+        }
+
+        public async Task<CatalogBrand> FindCatalogBrandAsync(int id)
+        {
+            return await Task.FromResult(FindCatalogBrand(id));
+        }
+
+        public CatalogType FindCatalogType(int id)
+        {
+            return PreconfiguredData.GetPreconfiguredCatalogTypes().FirstOrDefault(x => x.Id == id);
+        }
+
+        public async Task<CatalogType> FindCatalogTypeAsync(int id)
+        {
+            return await Task.FromResult(FindCatalogType(id));
         }
 
         public IEnumerable<CatalogType> GetCatalogTypes()
@@ -40,9 +71,19 @@ namespace eShopLegacyMVC.Services
             return PreconfiguredData.GetPreconfiguredCatalogTypes();
         }
 
+        public async Task<IEnumerable<CatalogType>> GetCatalogTypesAsync()
+        {
+            return await Task.FromResult(GetCatalogTypes());
+        }
+
         public IEnumerable<CatalogBrand> GetCatalogBrands()
         {
             return PreconfiguredData.GetPreconfiguredCatalogBrands();
+        }
+
+        public async Task<IEnumerable<CatalogBrand>> GetCatalogBrandsAsync()
+        {
+            return await Task.FromResult(GetCatalogBrands());
         }
 
         public void CreateCatalogItem(CatalogItem catalogItem)
@@ -50,6 +91,12 @@ namespace eShopLegacyMVC.Services
             var maxId = catalogItems.Max(i => i.Id);
             catalogItem.Id = ++maxId;
             catalogItems.Add(catalogItem);
+        }
+
+        public async Task CreateCatalogItemAsync(CatalogItem catalogItem)
+        {
+            CreateCatalogItem(catalogItem);
+            await Task.CompletedTask;
         }
 
         public void UpdateCatalogItem(CatalogItem modifiedItem)
@@ -61,9 +108,21 @@ namespace eShopLegacyMVC.Services
             }
         }
 
+        public async Task UpdateCatalogItemAsync(CatalogItem modifiedItem)
+        {
+            UpdateCatalogItem(modifiedItem);
+            await Task.CompletedTask;
+        }
+
         public void RemoveCatalogItem(CatalogItem catalogItem)
         {
             catalogItems.Remove(catalogItem);
+        }
+
+        public async Task RemoveCatalogItemAsync(CatalogItem catalogItem)
+        {
+            RemoveCatalogItem(catalogItem);
+            await Task.CompletedTask;
         }
 
         public void Dispose()
@@ -78,7 +137,6 @@ namespace eShopLegacyMVC.Services
             items.ForEach(i => i.CatalogType = catalogTypes.First(b => b.Id == i.CatalogTypeId));
 
             return items;
-            ;
         }
     }
 }

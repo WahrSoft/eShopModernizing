@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Caching.Distributed;
@@ -44,23 +45,23 @@ namespace eShopLegacyMVC.Controllers
         }
 
         // GET /[?pageSize=3&pageIndex=10]
-        public IActionResult Index(int pageSize = 10, int pageIndex = 0)
+        public async Task<IActionResult> Index(int pageSize = 10, int pageIndex = 0)
         {
             _log.Info($"Now loading... /Catalog/Index?pageSize={pageSize}&pageIndex={pageIndex}");
-            var paginatedItems = service.GetCatalogItemsPaginated(pageSize, pageIndex);
+            var paginatedItems = await service.GetCatalogItemsPaginatedAsync(pageSize, pageIndex);
             ChangeUriPlaceholder(paginatedItems.Data);
             return View(paginatedItems);
         }
 
         // GET: Catalog/Details/5
-        public IActionResult Details(int? id)
+        public async Task<IActionResult> Details(int? id)
         {
             _log.Info($"Now loading... /Catalog/Details?id={id}");
             if (id == null)
             {
                 return BadRequest();
             }
-            CatalogItem catalogItem = service.FindCatalogItem(id.Value);
+            CatalogItem catalogItem = await service.FindCatalogItemAsync(id.Value);
             if (catalogItem == null)
             {
                 return NotFound();
@@ -71,11 +72,11 @@ namespace eShopLegacyMVC.Controllers
         }
 
         // GET: Catalog/Create
-        public IActionResult Create()
+        public async Task<IActionResult> Create()
         {
             _log.Info($"Now loading... /Catalog/Create");
-            ViewBag.CatalogBrandId = new SelectList(service.GetCatalogBrands(), "Id", "Brand");
-            ViewBag.CatalogTypeId = new SelectList(service.GetCatalogTypes(), "Id", "Type");
+            ViewBag.CatalogBrandId = new SelectList(await service.GetCatalogBrandsAsync(), "Id", "Brand");
+            ViewBag.CatalogTypeId = new SelectList(await service.GetCatalogTypesAsync(), "Id", "Type");
             return View(new CatalogItem());
         }
 
@@ -84,36 +85,36 @@ namespace eShopLegacyMVC.Controllers
         // more details see https://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public IActionResult Create([Bind("Id,Name,Description,Price,PictureFileName,CatalogTypeId,CatalogBrandId,AvailableStock,RestockThreshold,MaxStockThreshold,OnReorder")] CatalogItem catalogItem)
+        public async Task<IActionResult> Create([Bind("Id,Name,Description,Price,PictureFileName,CatalogTypeId,CatalogBrandId,AvailableStock,RestockThreshold,MaxStockThreshold,OnReorder")] CatalogItem catalogItem)
         {
             _log.Info($"Now processing... /Catalog/Create?catalogItemName={catalogItem.Name}");
             if (ModelState.IsValid)
             {
-                service.CreateCatalogItem(catalogItem);
+                await service.CreateCatalogItemAsync(catalogItem);
                 return RedirectToAction("Index");
             }
 
-            ViewBag.CatalogBrandId = new SelectList(service.GetCatalogBrands(), "Id", "Brand", catalogItem.CatalogBrandId);
-            ViewBag.CatalogTypeId = new SelectList(service.GetCatalogTypes(), "Id", "Type", catalogItem.CatalogTypeId);
+            ViewBag.CatalogBrandId = new SelectList(await service.GetCatalogBrandsAsync(), "Id", "Brand", catalogItem.CatalogBrandId);
+            ViewBag.CatalogTypeId = new SelectList(await service.GetCatalogTypesAsync(), "Id", "Type", catalogItem.CatalogTypeId);
             return View(catalogItem);
         }
 
         // GET: Catalog/Edit/5
-        public IActionResult Edit(int? id)
+        public async Task<IActionResult> Edit(int? id)
         {
             _log.Info($"Now loading... /Catalog/Edit?id={id}");
             if (id == null)
             {
                 return BadRequest();
             }
-            CatalogItem catalogItem = service.FindCatalogItem(id.Value);
+            CatalogItem catalogItem = await service.FindCatalogItemAsync(id.Value);
             if (catalogItem == null)
             {
                 return NotFound();
             }
             AddUriPlaceHolder(catalogItem);
-            ViewBag.CatalogBrandId = new SelectList(service.GetCatalogBrands(), "Id", "Brand", catalogItem.CatalogBrandId);
-            ViewBag.CatalogTypeId = new SelectList(service.GetCatalogTypes(), "Id", "Type", catalogItem.CatalogTypeId);
+            ViewBag.CatalogBrandId = new SelectList(await service.GetCatalogBrandsAsync(), "Id", "Brand", catalogItem.CatalogBrandId);
+            ViewBag.CatalogTypeId = new SelectList(await service.GetCatalogTypesAsync(), "Id", "Type", catalogItem.CatalogTypeId);
             return View(catalogItem);
         }
 
@@ -122,28 +123,28 @@ namespace eShopLegacyMVC.Controllers
         // more details see https://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public IActionResult Edit([Bind("Id,Name,Description,Price,PictureFileName,CatalogTypeId,CatalogBrandId,AvailableStock,RestockThreshold,MaxStockThreshold,OnReorder")] CatalogItem catalogItem)
+        public async Task<IActionResult> Edit([Bind("Id,Name,Description,Price,PictureFileName,CatalogTypeId,CatalogBrandId,AvailableStock,RestockThreshold,MaxStockThreshold,OnReorder")] CatalogItem catalogItem)
         {
             _log.Info($"Now processing... /Catalog/Edit?id={catalogItem.Id}");
             if (ModelState.IsValid)
             {
-                service.UpdateCatalogItem(catalogItem);
+                await service.UpdateCatalogItemAsync(catalogItem);
                 return RedirectToAction("Index");
             }
-            ViewBag.CatalogBrandId = new SelectList(service.GetCatalogBrands(), "Id", "Brand", catalogItem.CatalogBrandId);
-            ViewBag.CatalogTypeId = new SelectList(service.GetCatalogTypes(), "Id", "Type", catalogItem.CatalogTypeId);
+            ViewBag.CatalogBrandId = new SelectList(await service.GetCatalogBrandsAsync(), "Id", "Brand", catalogItem.CatalogBrandId);
+            ViewBag.CatalogTypeId = new SelectList(await service.GetCatalogTypesAsync(), "Id", "Type", catalogItem.CatalogTypeId);
             return View(catalogItem);
         }
 
         // GET: Catalog/Delete/5
-        public IActionResult Delete(int? id)
+        public async Task<IActionResult> Delete(int? id)
         {
             _log.Info($"Now loading... /Catalog/Delete?id={id}");
             if (id == null)
             {
                 return BadRequest();
             }
-            CatalogItem catalogItem = service.FindCatalogItem(id.Value);
+            CatalogItem catalogItem = await service.FindCatalogItemAsync(id.Value);
             if (catalogItem == null)
             {
                 return NotFound();
@@ -156,11 +157,11 @@ namespace eShopLegacyMVC.Controllers
         // POST: Catalog/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public IActionResult DeleteConfirmed(int id)
+        public async Task<IActionResult> DeleteConfirmed(int id)
         {
             _log.Info($"Now processing... /Catalog/DeleteConfirmed?id={id}");
-            CatalogItem catalogItem = service.FindCatalogItem(id);
-            service.RemoveCatalogItem(catalogItem);
+            CatalogItem catalogItem = await service.FindCatalogItemAsync(id);
+            await service.RemoveCatalogItemAsync(catalogItem);
             return RedirectToAction("Index");
         }
 
