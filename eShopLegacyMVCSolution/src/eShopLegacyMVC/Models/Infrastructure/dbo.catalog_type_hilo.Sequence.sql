@@ -1,4 +1,3 @@
-USE [Microsoft.eShopOnContainers.Services.CatalogDb]
 /****** Object:  Sequence [dbo].[catalog_type_hilo]    Script Date: 16/08/2017 11:21:49 ******/
 CREATE SEQUENCE [dbo].[catalog_type_hilo] 
  AS [bigint]
