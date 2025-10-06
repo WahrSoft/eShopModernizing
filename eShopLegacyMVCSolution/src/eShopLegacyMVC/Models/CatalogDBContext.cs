@@ -68,7 +68,8 @@ namespace eShopLegacyMVC.Models
                 .HasMaxLength(50);
 
             builder.Property(ci => ci.Price)
-                .IsRequired();
+                .IsRequired()
+                .HasPrecision(18, 2); // Specify precision for decimal to match SQL Server decimal(18,2)
 
             builder.Property(ci => ci.PictureFileName)
                 .IsRequired();

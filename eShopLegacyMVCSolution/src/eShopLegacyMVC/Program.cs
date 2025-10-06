@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -124,16 +125,19 @@ using (var scope = app.Services.CreateScope())
         {
             var catalogContext = services.GetRequiredService<CatalogDBContext>();
             
-            // Ensure the database is created and apply any pending migrations
-            catalogContext.Database.EnsureCreated();
+            // Apply any pending migrations and create database if it doesn't exist
+            catalogContext.Database.Migrate();
             
-            // Run database seeding if needed
-            var catalogInitializer = services.GetRequiredService<CatalogDBInitializer>();
-            catalogInitializer.Seed(catalogContext);
+            // Run database seeding if needed (only if tables are empty)
+            if (!catalogContext.CatalogTypes.Any())
+            {
+                var catalogInitializer = services.GetRequiredService<CatalogDBInitializer>();
+                catalogInitializer.Seed(catalogContext);
+            }
         }
         catch (Exception ex)
         {
-            appLogger?.LogError(ex, "An error occurred while seeding the database.");
+            appLogger?.LogError(ex, "An error occurred while migrating or seeding the database.");
         }
     }
 }
