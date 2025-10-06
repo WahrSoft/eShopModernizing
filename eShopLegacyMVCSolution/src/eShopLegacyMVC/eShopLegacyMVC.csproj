@@ -11,6 +11,8 @@
     
     <!-- Entity Framework (keeping EF6 for compatibility) -->
     <PackageReference Include="EntityFramework" Version="6.5.1" />
+    <PackageReference Include="Microsoft.EntityFramework.SqlServer" Version="6.5.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
     
     <!-- Application Insights for .NET Core -->
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />

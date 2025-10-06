@@ -2,9 +2,11 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Data.Entity;
 using System.Data.Entity.ModelConfiguration;
+using System.Data.Entity.SqlServer;
 
 namespace eShopLegacyMVC.Models
 {
+    [DbConfigurationType(typeof(MicrosoftSqlDbConfiguration))]
     public class CatalogDBContext : DbContext
     {
         public CatalogDBContext() : base("name=CatalogDBContext")

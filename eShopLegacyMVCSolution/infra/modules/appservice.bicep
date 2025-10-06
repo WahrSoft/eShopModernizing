@@ -32,6 +32,7 @@ var webAppName = '${resourceNamePrefix}-app'
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: appServicePlanName
   location: location
+  kind: 'linux'
   sku: {
     name: environmentName == 'prod' ? 'S1' : 'S1'
     tier: environmentName == 'prod' ? 'Standard' : 'Standard'
@@ -40,7 +41,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
     capacity: environmentName == 'prod' ? 1 : 1
   }
   properties: {
-    reserved: false // Windows
+    reserved: true // Linux
     zoneRedundant: environmentName == 'prod' ? false : false
   }
   tags: {
@@ -53,6 +54,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
 resource webApp 'Microsoft.Web/sites@2023-01-01' = {
   name: webAppName
   location: location
+  kind: 'app'
   identity: {
     type: 'SystemAssigned'
   }
@@ -60,21 +62,12 @@ resource webApp 'Microsoft.Web/sites@2023-01-01' = {
     serverFarmId: appServicePlan.id
     httpsOnly: true
     redundancyMode: environmentName == 'prod' ? 'None' : 'None'
+
     siteConfig: {
       // .NET 8 configuration
       netFrameworkVersion: 'v8.0'
       // Startup command for .NET 8 application
       appCommandLine: 'dotnet eShopLegacyMVC.dll'
-      defaultDocuments: [
-        'Default.htm'
-        'Default.html'
-        'Default.asp'
-        'index.htm'
-        'index.html'
-        'iisstart.htm'
-        'default.aspx'
-        'index.php'
-      ]
       httpLoggingEnabled: true
       logsDirectorySizeLimit: 35
       detailedErrorLoggingEnabled: true
@@ -83,14 +76,6 @@ resource webApp 'Microsoft.Web/sites@2023-01-01' = {
       use32BitWorkerProcess: false
       webSocketsEnabled: false
       alwaysOn: true
-      managedPipelineMode: 'Integrated'
-      virtualApplications: [
-        {
-          virtualPath: '/'
-          physicalPath: 'site\\wwwroot'
-          preloadEnabled: true
-        }
-      ]
       loadBalancing: 'LeastRequests'
       autoHealEnabled: false
       vnetRouteAllEnabled: true
@@ -115,6 +100,7 @@ resource webApp 'Microsoft.Web/sites@2023-01-01' = {
           description: 'Allow all access'
         }
       ]
+      linuxFxVersion: 'DOTNETCORE|8.0'
       scmIpSecurityRestrictionsUseMain: false
       http20Enabled: false
       minTlsVersion: '1.2'
