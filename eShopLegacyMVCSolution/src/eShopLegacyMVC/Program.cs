@@ -15,6 +15,9 @@ using System.Reflection;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using System;
+using System.Data.Common;
+using Microsoft.Data.SqlClient;
+using System.Data.Entity.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +25,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<CacheSettings>(builder.Configuration.GetSection("CacheSettings"));
 var cacheSettings = new CacheSettings();
 builder.Configuration.GetSection("CacheSettings").Bind(cacheSettings);
+
+
+try
+{
+    DbProviderFactories.RegisterFactory(MicrosoftSqlProviderServices.ProviderInvariantName,
+        SqlClientFactory.Instance);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Error registering SQL Server provider factory: {ex.Message}");
+}
 
 // Add Application Insights telemetry
 builder.Services.AddApplicationInsightsTelemetry(options =>
@@ -171,5 +185,6 @@ app.MapControllers();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Catalog}/{action=Index}/{id?}");
+
 
 app.Run();
