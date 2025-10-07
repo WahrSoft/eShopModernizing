@@ -24,7 +24,7 @@ namespace eShopLegacyMVC.Migrations
             modelBuilder.Entity("eShopLegacyMVC.Models.CatalogBrand", b =>
                 {
                     b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
+                        .ValueGeneratedNever()
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
@@ -42,7 +42,9 @@ namespace eShopLegacyMVC.Migrations
             modelBuilder.Entity("eShopLegacyMVC.Models.CatalogItem", b =>
                 {
                     b.Property<int>("Id")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .ValueGeneratedNever();
+
 
                     b.Property<int>("AvailableStock")
                         .HasColumnType("int");
@@ -90,7 +92,7 @@ namespace eShopLegacyMVC.Migrations
             modelBuilder.Entity("eShopLegacyMVC.Models.CatalogType", b =>
                 {
                     b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
+                        .ValueGeneratedNever()
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
