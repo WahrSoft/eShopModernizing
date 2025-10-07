@@ -26,9 +26,34 @@ builder.Services.Configure<CacheSettings>(builder.Configuration.GetSection("Cach
 var cacheSettings = new CacheSettings();
 builder.Configuration.GetSection("CacheSettings").Bind(cacheSettings);
 
-// Add Entity Framework Core DbContext
 builder.Services.AddDbContext<CatalogDBContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("CatalogDBContext")));
+{
+    var connectionString = builder.Configuration.GetConnectionString("CatalogDBContext");
+
+    if (string.IsNullOrEmpty(connectionString))
+    {
+        throw new InvalidOperationException("Database connection string 'CatalogDBContext' not found.");
+    }
+
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
+        sqlOptions.CommandTimeout(120);
+    });
+
+    // Enable sensitive data logging in development only
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+
+    // Add query logging
+    options.LogTo(message => System.Diagnostics.Debug.WriteLine(message));
+});
 
 // Add Application Insights telemetry
 builder.Services.AddApplicationInsightsTelemetry(options =>
