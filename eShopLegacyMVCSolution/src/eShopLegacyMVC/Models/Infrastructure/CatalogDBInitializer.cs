@@ -38,10 +38,10 @@ namespace eShopLegacyMVC.Models.Infrastructure
             ExecuteScript(context, CatalogBrandHiLoSequenceScript);
             ExecuteScript(context, CatalogTypeHiLoSequenceScript);
 
-            AddCatalogTypes(context);
-            AddCatalogBrands(context);
-            AddCatalogItems(context);
-            AddCatalogItemPictures();
+           // AddCatalogTypes(context);
+           // AddCatalogBrands(context);
+           // AddCatalogItems(context);
+           // AddCatalogItemPictures();
             
         }
 
