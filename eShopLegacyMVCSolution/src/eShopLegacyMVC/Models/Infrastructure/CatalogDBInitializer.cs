@@ -51,6 +51,9 @@ namespace eShopLegacyMVC.Models.Infrastructure
                 ? GetCatalogTypesFromFile()
                 : PreconfiguredData.GetPreconfiguredCatalogTypes();
 
+            // Turn on IDENTITY_INSERT for CatalogTypes table
+            IdentityInsert(context, "CatalogType");
+            
             int sequenceId = GetSequenceIdFromSelectedDBSequence(context, DBCatalogSequenceName);
             foreach (var type in preconfiguredTypes)
             {
@@ -60,10 +63,15 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
 
             context.SaveChanges();
+
+            // Turn off IDENTITY_INSERT for CatalogTypes table
+            IdentityInsert(context, "CatalogType", false);
+
         }
 
         private void AddCatalogBrands(CatalogDBContext context)
         {
+            IdentityInsert(context, "CatalogBrand");
             var preconfiguredBrands = useCustomizationData
                 ? GetCatalogBrandsFromFile()
                 : PreconfiguredData.GetPreconfiguredCatalogBrands();
@@ -77,10 +85,14 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
 
             context.SaveChanges();
+            IdentityInsert(context, "CatalogBrand", false);
+
         }
 
         private void AddCatalogItems(CatalogDBContext context)
         {
+            IdentityInsert(context, "Catalog");
+
             var preconfiguredItems = useCustomizationData
                 ? GetCatalogItemsFromFile(context)
                 : PreconfiguredData.GetPreconfiguredCatalogItems();
@@ -93,6 +105,8 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
 
             context.SaveChanges();
+            IdentityInsert(context, "Catalog", false);
+
         }
 
         private IEnumerable<CatalogType> GetCatalogTypesFromFile()
@@ -324,6 +338,17 @@ namespace eShopLegacyMVC.Models.Infrastructure
             }
 
             return csvheaders;
+        }
+
+        private static void IdentityInsert(CatalogDBContext context, string table, bool on = true)
+        {
+            using (var command = context.Database.GetDbConnection().CreateCommand())
+            {
+                command.CommandText = $"SET IDENTITY_INSERT {table} {(on ? "ON" : "OFF")}";
+                context.Database.OpenConnection();
+                var result = command.ExecuteNonQuery();
+                context.Database.CloseConnection();
+            }
         }
 
         private static int GetSequenceIdFromSelectedDBSequence(CatalogDBContext context, string dBSequenceName)
