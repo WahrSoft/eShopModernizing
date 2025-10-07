@@ -328,8 +328,14 @@ namespace eShopLegacyMVC.Models.Infrastructure
 
         private static int GetSequenceIdFromSelectedDBSequence(CatalogDBContext context, string dBSequenceName)
         {
-            var sequenceId = context.Database.SqlQuery<long>($"SELECT NEXT VALUE FOR {dBSequenceName}").ToList().Single();
-            return (int)sequenceId;
+            using(var command = context.Database.GetDbConnection().CreateCommand())
+            {
+                command.CommandText = $"SELECT NEXT VALUE FOR {dBSequenceName}";
+                context.Database.OpenConnection();
+                var result = command.ExecuteScalar();
+                context.Database.CloseConnection();
+                return Convert.ToInt32(result);
+            }
         }
 
         private void ExecuteScript(CatalogDBContext context, string scriptFile)
